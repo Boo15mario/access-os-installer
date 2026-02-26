@@ -56,12 +56,17 @@ fn build_ui(app: &Application) {
         .wrap(true)
         .build();
 
+    let drive_entry_clone = drive_entry.clone();
+    let user_entry_clone = user_entry.clone();
+    let host_entry_clone = host_entry.clone();
+    let status_label_clone = status_label.clone();
+
     install_btn.connect_clicked(move |_| {
-        let drive = drive_entry.text().to_string();
-        let user = user_entry.text().to_string();
-        let host = host_entry.text().to_string();
+        let drive = drive_entry_clone.text().to_string();
+        let user = user_entry_clone.text().to_string();
+        let host = host_entry_clone.text().to_string();
         
-        status_label.set_label(&format!("Starting installation on {} for user {}...", drive, user));
+        status_label_clone.set_label(&format!("Starting installation on {} for user {}...", drive, user));
         
         // This is where the actual NixOS install logic would go.
         // For a full installer, this would:
