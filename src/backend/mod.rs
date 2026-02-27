@@ -1,8 +1,9 @@
 pub mod disk_manager;
 pub mod config_engine;
 pub mod install_worker;
+pub mod network;
 
-use sysinfo::{System, SystemExt};
+use sysinfo::System;
 
 pub fn get_suggested_swap_gb() -> u64 {
     let mut sys = System::new_all();

@@ -98,24 +98,18 @@ fn extract_value(line: &str) -> Option<String> {
 
 pub fn apply_local_settings(host_path: &str, settings: &HostSettings) -> Result<(), String> {
     let local_settings_path = Path::new(host_path).join("local-settings.nix");
-    let mut content = String::from("{ ... }:
-{
-");
+    let mut content = String::from("{ ... }:\n{\n");
     
     if let Some(tz) = &settings.timezone {
-        content.push_str(&format!("  time.timeZone = "{}";
-", tz));
+        content.push_str(&format!("  time.timeZone = \"{}\";\n", tz));
     }
     if let Some(loc) = &settings.locale {
-        content.push_str(&format!("  i18n.defaultLocale = "{}";
-", loc));
+        content.push_str(&format!("  i18n.defaultLocale = \"{}\";\n", loc));
     }
     if let Some(km) = &settings.keymap {
-        content.push_str(&format!("  console.keyMap = "{}";
-", km));
+        content.push_str(&format!("  console.keyMap = \"{}\";\n", km));
     }
-    content.push_str("}
-");
+    content.push_str("}\n");
 
     fs::write(&local_settings_path, content).map_err(|e| format!("Failed to write local-settings.nix: {}", e))?;
 
@@ -125,8 +119,7 @@ pub fn apply_local_settings(host_path: &str, settings: &HostSettings) -> Result<
     
     if !config_content.contains("./local-settings.nix") {
         // Simple injection: find the start of imports or just add it before the first {
-        let new_content = config_content.replacen("imports = [", "imports = [
-    ./local-settings.nix", 1);
+        let new_content = config_content.replacen("imports = [", "imports = [\n    ./local-settings.nix", 1);
         if new_content != config_content {
             fs::write(&config_path, new_content).map_err(|e| format!("Failed to update configuration.nix with import: {}", e))?;
         }

@@ -7,6 +7,7 @@ pub struct BlockDevice {
     pub size: String,
     pub model: Option<String>,
     pub tran: Option<String>,
+    pub rm: Option<u8>,
     #[serde(rename = "type")]
     pub device_type: String,
 }
@@ -18,7 +19,7 @@ struct LsblkOutput {
 
 pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
     let output = Command::new("lsblk")
-        .args(&["-J", "-o", "NAME,SIZE,MODEL,TRAN,TYPE"])
+        .args(&["-J", "-o", "NAME,SIZE,MODEL,TRAN,TYPE,RM"])
         .output()
         .map_err(|e| format!("Failed to execute lsblk: {}", e))?;
 
@@ -28,6 +29,34 @@ pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
     Ok(decoded.blockdevices.into_iter()
         .filter(|d| d.device_type == "disk")
         .collect())
+}
+
+fn is_internal_device(device: &BlockDevice) -> bool {
+    if device.device_type != "disk" {
+        return false;
+    }
+
+    if device.rm == Some(1) {
+        return false;
+    }
+
+    !matches!(device.tran.as_deref(), Some("usb"))
+}
+
+pub fn get_internal_block_devices() -> Result<Vec<BlockDevice>, String> {
+    Ok(get_block_devices()?
+        .into_iter()
+        .filter(is_internal_device)
+        .collect())
+}
+
+pub fn partition_device_path(drive: &str, partition: u8) -> String {
+    let suffix = partition.to_string();
+    if drive.chars().last().is_some_and(|c| c.is_ascii_digit()) {
+        format!("{}p{}", drive, suffix)
+    } else {
+        format!("{}{}", drive, suffix)
+    }
 }
 
 pub struct PartitionPlan {
@@ -77,10 +106,9 @@ pub fn execute_partitioning(drive: &str, swap_gb: u64, fs_type: &str) -> Result<
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
 
-    // Determine partition names (assuming standard /dev/sdX -> /dev/sdX1)
-    let p1 = format!("{}1", drive);
-    let p2 = format!("{}2", drive);
-    let p3 = format!("{}3", drive);
+    let p1 = partition_device_path(drive, 1);
+    let p2 = partition_device_path(drive, 2);
+    let p3 = partition_device_path(drive, 3);
 
     // 4. Format partitions
     // EFI
@@ -95,4 +123,51 @@ pub fn execute_partitioning(drive: &str, swap_gb: u64, fs_type: &str) -> Result<
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BlockDevice, get_internal_block_devices, is_internal_device, partition_device_path};
+
+    fn fixture_device(name: &str, device_type: &str, tran: Option<&str>, rm: Option<u8>) -> BlockDevice {
+        BlockDevice {
+            name: name.to_string(),
+            size: "100G".to_string(),
+            model: Some("Fixture".to_string()),
+            tran: tran.map(|value| value.to_string()),
+            rm,
+            device_type: device_type.to_string(),
+        }
+    }
+
+    #[test]
+    fn internal_filter_excludes_usb_or_removable_disks() {
+        let sata = fixture_device("sda", "disk", Some("sata"), Some(0));
+        let usb = fixture_device("sdb", "disk", Some("usb"), Some(1));
+        let partition = fixture_device("sda1", "part", Some("sata"), Some(0));
+
+        assert!(is_internal_device(&sata));
+        assert!(!is_internal_device(&usb));
+        assert!(!is_internal_device(&partition));
+    }
+
+    #[test]
+    fn internal_filter_allows_unknown_transport_non_removable_disks() {
+        let nvme = fixture_device("nvme0n1", "disk", None, Some(0));
+        let unknown_rm = fixture_device("vda", "disk", None, None);
+
+        assert!(is_internal_device(&nvme));
+        assert!(is_internal_device(&unknown_rm));
+    }
+
+    #[test]
+    fn internal_device_query_function_is_available() {
+        let _ = get_internal_block_devices;
+    }
+
+    #[test]
+    fn partition_device_path_supports_nvme_and_sd_drives() {
+        assert_eq!(partition_device_path("/dev/sda", 1), "/dev/sda1");
+        assert_eq!(partition_device_path("/dev/nvme0n1", 1), "/dev/nvme0n1p1");
+    }
 }
