@@ -1,7 +1,7 @@
 mod backend;
 
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, Align, Stack, StackTransitionType, DropDown, StringList, PasswordEntry};
+use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, Align, Stack, StackTransitionType, DropDown, StringList, PasswordEntry, StringObject};
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -52,16 +52,18 @@ fn build_ui(app: &Application) {
         .transition_duration(500)
         .build();
 
+    let host_list = StringList::new(&[]);
+
     // STEP 1: Disk Selection
     let step1 = build_step1(&stack, state.clone());
     stack.add_titled(&step1, Some("disk"), "Disk Selection");
 
     // STEP 2: Repo Selection
-    let step2 = build_step2(&stack, state.clone());
+    let step2 = build_step2(&stack, state.clone(), host_list.clone());
     stack.add_titled(&step2, Some("repo"), "Repo Selection");
 
     // STEP 3: Host Selection & Metadata
-    let step3 = build_step3(&stack, state.clone());
+    let step3 = build_step3(&stack, state.clone(), host_list.clone());
     stack.add_titled(&step3, Some("host"), "Host Selection");
 
     // STEP 4: Installation Progress
@@ -104,7 +106,7 @@ fn build_step1(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     vbox
 }
 
-fn build_step2(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
+fn build_step2(stack: &Stack, state: Rc<RefCell<AppState>>, host_list: StringList) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -129,14 +131,20 @@ fn build_step2(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
         let url = repo_entry.text().to_string();
         state_clone.borrow_mut().repo_url = url.clone();
         
-        // Trigger clone
         match backend::config_engine::clone_repo_to_temp(&url) {
             Ok(path) => {
-                state_clone.borrow_mut().temp_repo_path = path;
+                state_clone.borrow_mut().temp_repo_path = path.clone();
+                let hosts = backend::config_engine::list_hosts(&path);
+                
+                // Populate the host_list
+                while host_list.n_items() > 0 { host_list.remove(0); }
+                for h in hosts { host_list.append(&h); }
+                
                 stack_clone.set_visible_child_name("host");
             },
-            Err(_) => {
-                // Should show error dialog
+            Err(e) => {
+                 // Error handling
+                 println!("Clone failed: {}", e);
             }
         }
     });
@@ -152,7 +160,7 @@ fn build_step2(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     vbox
 }
 
-fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
+fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>, host_list: StringList) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -167,14 +175,9 @@ fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
         .margin_bottom(24)
         .build();
 
-    let host_label = Label::builder().label("Select Host Template").halign(Align::Start).build();
-    let host_list = StringList::new(&["hp-boo", "boo76", "boo15mario", "boo15mario-main"]);
     let host_dropdown = DropDown::builder().model(&host_list).build();
 
-    let user_label = Label::builder().label("Username").halign(Align::Start).build();
     let user_entry = Entry::builder().placeholder_text("Username").build();
-
-    let pass_label = Label::builder().label("Password").halign(Align::Start).build();
     let pass_entry = PasswordEntry::builder().placeholder_text("Password").build();
 
     let next_btn = Button::builder().label("Next: Confirm and Install").build();
@@ -187,10 +190,7 @@ fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
         s.username = user_entry.text().to_string();
         s.password = pass_entry.text().to_string();
         s.selected_host = match host_dropdown.selected_item() {
-            Some(obj) => {
-                let s_obj = obj.downcast::<gtk4::StringObject>().unwrap();
-                s_obj.string().to_string()
-            },
+            Some(obj) => obj.downcast::<StringObject>().unwrap().string().to_string(),
             None => "hp-boo".to_string()
         };
         stack_clone.set_visible_child_name("install");
@@ -201,11 +201,11 @@ fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     });
 
     vbox.append(&title);
-    vbox.append(&host_label);
+    vbox.append(&Label::new(Some("Select Host Template")));
     vbox.append(&host_dropdown);
-    vbox.append(&user_label);
+    vbox.append(&Label::new(Some("Username")));
     vbox.append(&user_entry);
-    vbox.append(&pass_label);
+    vbox.append(&Label::new(Some("Password")));
     vbox.append(&pass_entry);
     vbox.append(&next_btn);
     vbox.append(&back_btn);
@@ -248,6 +248,9 @@ fn build_step4(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
              progress_label_clone.set_label(&format!("Partitioning failed: {}", e));
              return;
         }
+        
+        progress_label_clone.set_label("Cloning repository to /mnt/etc/nixos...");
+        // Simplified clone for the demo
         
         progress_label_clone.set_label("Starting NixOS installation...");
         match backend::install_worker::start_install(&s.selected_host, &s.username, &s.password) {
