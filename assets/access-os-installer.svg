@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Red background -->
+  <rect width="128" height="128" fill="#CC0000" rx="16"/>
+  <!-- White circle -->
+  <circle cx="64" cy="64" r="52" fill="#FFFFFF"/>
+  <!-- Green "Install" text -->
+  <text
+    x="64"
+    y="72"
+    font-family="Sans,DejaVu Sans,Arial"
+    font-size="22"
+    font-weight="bold"
+    fill="#1A8A1A"
+    text-anchor="middle"
+    dominant-baseline="middle">Install</text>
+</svg>

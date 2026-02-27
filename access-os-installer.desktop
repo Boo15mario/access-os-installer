@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=access-OS Installer
+Comment=Install access-OS onto your system
+Exec=access-os-installer
+Icon=access-os-installer
+Type=Application
+Categories=System;
+Terminal=false
+StartupNotify=true
