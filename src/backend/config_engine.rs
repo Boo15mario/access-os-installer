@@ -45,3 +45,53 @@ pub fn list_hosts(path: &str) -> Vec<String> {
     }
     hosts
 }
+
+pub struct HostSettings {
+    pub timezone: Option<String>,
+    pub locale: Option<String>,
+    pub keymap: Option<String>,
+}
+
+pub fn check_settings(host_path: &str) -> HostSettings {
+    let mut settings = HostSettings {
+        timezone: None,
+        locale: None,
+        keymap: None,
+    };
+
+    let host_config_path = Path::new(host_path).join("configuration.nix");
+    let content = match fs::read_to_string(host_config_path) {
+        Ok(c) => c,
+        Err(_) => return settings,
+    };
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.contains("time.timeZone") {
+            settings.timezone = extract_value(line);
+        } else if line.contains("i18n.defaultLocale") {
+            settings.locale = extract_value(line);
+        } else if line.contains("console.keyMap") {
+            settings.keymap = extract_value(line);
+        }
+    }
+
+    settings
+}
+
+fn extract_value(line: &str) -> Option<String> {
+    // Basic logic to extract a string value between quotes
+    let parts: Vec<&str> = line.split('=').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let val_part = parts[1].trim();
+    let val_part = val_part.trim_end_matches(';');
+    let start = val_part.find('"')?;
+    let end = val_part.rfind('"')?;
+    if start < end {
+        Some(val_part[start + 1..end].to_string())
+    } else {
+        None
+    }
+}
