@@ -1,9 +1,24 @@
 mod backend;
 
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, Align, Stack, StackTransitionType, DropDown, StringList};
+use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, Align, Stack, StackTransitionType, DropDown, StringList, PasswordEntry};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 const APP_ID: &str = "org.accessos.Installer";
+
+struct AppState {
+    drive: String,
+    repo_url: String,
+    temp_repo_path: String,
+    selected_host: String,
+    username: String,
+    password: String,
+    hostname: String,
+    timezone: String,
+    locale: String,
+    keymap: String,
+}
 
 fn main() {
     let app = Application::builder().application_id(APP_ID).build();
@@ -12,6 +27,19 @@ fn main() {
 }
 
 fn build_ui(app: &Application) {
+    let state = Rc::new(RefCell::new(AppState {
+        drive: String::new(),
+        repo_url: String::new(),
+        temp_repo_path: String::new(),
+        selected_host: String::new(),
+        username: String::new(),
+        password: String::new(),
+        hostname: String::new(),
+        timezone: String::new(),
+        locale: String::new(),
+        keymap: String::new(),
+    }));
+
     let window = ApplicationWindow::builder()
         .application(app)
         .title("access-OS Installer")
@@ -25,26 +53,26 @@ fn build_ui(app: &Application) {
         .build();
 
     // STEP 1: Disk Selection
-    let step1 = build_step1(&stack);
+    let step1 = build_step1(&stack, state.clone());
     stack.add_titled(&step1, Some("disk"), "Disk Selection");
 
     // STEP 2: Repo Selection
-    let step2 = build_step2(&stack);
+    let step2 = build_step2(&stack, state.clone());
     stack.add_titled(&step2, Some("repo"), "Repo Selection");
 
     // STEP 3: Host Selection & Metadata
-    let step3 = build_step3(&stack);
+    let step3 = build_step3(&stack, state.clone());
     stack.add_titled(&step3, Some("host"), "Host Selection");
 
     // STEP 4: Installation Progress
-    let step4 = build_step4(&stack);
+    let step4 = build_step4(&stack, state.clone());
     stack.add_titled(&step4, Some("install"), "Installing");
 
     window.set_child(Some(&stack));
     window.present();
 }
 
-fn build_step1(stack: &Stack) -> Box {
+fn build_step1(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -59,26 +87,24 @@ fn build_step1(stack: &Stack) -> Box {
         .margin_bottom(24)
         .build();
 
+    let drive_label = Label::builder().label("Target Drive (e.g. /dev/sda)").halign(Align::Start).build();
     let drive_entry = Entry::builder().placeholder_text("/dev/sda").build();
     let next_btn = Button::builder().label("Next: Select Repository").build();
 
     let stack_clone = stack.clone();
     next_btn.connect_clicked(move |_| {
+        state.borrow_mut().drive = drive_entry.text().to_string();
         stack_clone.set_visible_child_name("repo");
     });
 
     vbox.append(&title);
-    vbox.append(&drive_label_placeholder());
+    vbox.append(&drive_label);
     vbox.append(&drive_entry);
     vbox.append(&next_btn);
     vbox
 }
 
-fn drive_label_placeholder() -> Label {
-    Label::builder().label("Target Drive (e.g. /dev/sda)").halign(Align::Start).build()
-}
-
-fn build_step2(stack: &Stack) -> Box {
+fn build_step2(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -98,10 +124,21 @@ fn build_step2(stack: &Stack) -> Box {
     let back_btn = Button::builder().label("Back").build();
 
     let stack_clone = stack.clone();
+    let state_clone = state.clone();
     next_btn.connect_clicked(move |_| {
-        // Here we would normally trigger backend::config_engine::clone_repo_to_temp(repo_entry.text())
-        // And then update Step 3 hosts list.
-        stack_clone.set_visible_child_name("host");
+        let url = repo_entry.text().to_string();
+        state_clone.borrow_mut().repo_url = url.clone();
+        
+        // Trigger clone
+        match backend::config_engine::clone_repo_to_temp(&url) {
+            Ok(path) => {
+                state_clone.borrow_mut().temp_repo_path = path;
+                stack_clone.set_visible_child_name("host");
+            },
+            Err(_) => {
+                // Should show error dialog
+            }
+        }
     });
 
     back_btn.connect_clicked(move |_| {
@@ -115,7 +152,7 @@ fn build_step2(stack: &Stack) -> Box {
     vbox
 }
 
-fn build_step3(stack: &Stack) -> Box {
+fn build_step3(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -138,13 +175,24 @@ fn build_step3(stack: &Stack) -> Box {
     let user_entry = Entry::builder().placeholder_text("Username").build();
 
     let pass_label = Label::builder().label("Password").halign(Align::Start).build();
-    let pass_entry = PasswordEntry_placeholder();
+    let pass_entry = PasswordEntry::builder().placeholder_text("Password").build();
 
     let next_btn = Button::builder().label("Next: Confirm and Install").build();
     let back_btn = Button::builder().label("Back").build();
 
     let stack_clone = stack.clone();
+    let state_clone = state.clone();
     next_btn.connect_clicked(move |_| {
+        let mut s = state_clone.borrow_mut();
+        s.username = user_entry.text().to_string();
+        s.password = pass_entry.text().to_string();
+        s.selected_host = match host_dropdown.selected_item() {
+            Some(obj) => {
+                let s_obj = obj.downcast::<gtk4::StringObject>().unwrap();
+                s_obj.string().to_string()
+            },
+            None => "hp-boo".to_string()
+        };
         stack_clone.set_visible_child_name("install");
     });
 
@@ -164,11 +212,7 @@ fn build_step3(stack: &Stack) -> Box {
     vbox
 }
 
-fn PasswordEntry_placeholder() -> gtk4::PasswordEntry {
-    gtk4::PasswordEntry::builder().placeholder_text("Password").build()
-}
-
-fn build_step4(stack: &Stack) -> Box {
+fn build_step4(stack: &Stack, state: Rc<RefCell<AppState>>) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -193,6 +237,25 @@ fn build_step4(stack: &Stack) -> Box {
     let back_btn = Button::builder().label("Back").build();
 
     let stack_clone = stack.clone();
+    let state_clone = state.clone();
+    let progress_label_clone = progress_label.clone();
+    
+    start_btn.connect_clicked(move |_| {
+        let s = state_clone.borrow();
+        progress_label_clone.set_label("Partitioning disk...");
+        
+        if let Err(e) = backend::disk_manager::execute_partitioning(&s.drive, 8, "xfs") {
+             progress_label_clone.set_label(&format!("Partitioning failed: {}", e));
+             return;
+        }
+        
+        progress_label_clone.set_label("Starting NixOS installation...");
+        match backend::install_worker::start_install(&s.selected_host, &s.username, &s.password) {
+            Ok(_) => progress_label_clone.set_label("Installation Complete! Please reboot."),
+            Err(e) => progress_label_clone.set_label(&format!("Installation failed: {}", e)),
+        }
+    });
+
     back_btn.connect_clicked(move |_| {
         stack_clone.set_visible_child_name("host");
     });
