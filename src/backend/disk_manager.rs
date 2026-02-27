@@ -4,7 +4,8 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct BlockDevice {
     pub name: String,
-    pub size: String,
+    #[serde(rename = "size")]
+    pub size_bytes: u64,
     pub model: Option<String>,
     pub tran: Option<String>,
     pub rm: Option<u8>,
@@ -19,7 +20,7 @@ struct LsblkOutput {
 
 pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
     let output = Command::new("lsblk")
-        .args(&["-J", "-o", "NAME,SIZE,MODEL,TRAN,TYPE,RM"])
+        .args(&["-b", "-J", "-o", "NAME,SIZE,MODEL,TRAN,TYPE,RM"])
         .output()
         .map_err(|e| format!("Failed to execute lsblk: {}", e))?;
 
@@ -48,6 +49,14 @@ pub fn get_internal_block_devices() -> Result<Vec<BlockDevice>, String> {
         .into_iter()
         .filter(is_internal_device)
         .collect())
+}
+
+pub fn bytes_to_gib(bytes: u64) -> u64 {
+    bytes / (1024 * 1024 * 1024)
+}
+
+pub fn human_gib_label(bytes: u64) -> String {
+    format!("{} GiB", bytes_to_gib(bytes))
 }
 
 pub fn partition_device_path(drive: &str, partition: u8) -> String {
@@ -132,7 +141,7 @@ mod tests {
     fn fixture_device(name: &str, device_type: &str, tran: Option<&str>, rm: Option<u8>) -> BlockDevice {
         BlockDevice {
             name: name.to_string(),
-            size: "100G".to_string(),
+            size_bytes: 100 * 1024 * 1024 * 1024,
             model: Some("Fixture".to_string()),
             tran: tran.map(|value| value.to_string()),
             rm,
@@ -169,5 +178,10 @@ mod tests {
     fn partition_device_path_supports_nvme_and_sd_drives() {
         assert_eq!(partition_device_path("/dev/sda", 1), "/dev/sda1");
         assert_eq!(partition_device_path("/dev/nvme0n1", 1), "/dev/nvme0n1p1");
+    }
+
+    #[test]
+    fn bytes_to_gib_uses_binary_units() {
+        assert_eq!(super::bytes_to_gib(128 * 1024 * 1024 * 1024), 128);
     }
 }

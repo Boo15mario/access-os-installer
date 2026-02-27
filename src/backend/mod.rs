@@ -2,6 +2,7 @@ pub mod disk_manager;
 pub mod config_engine;
 pub mod install_worker;
 pub mod network;
+pub mod preflight;
 
 use sysinfo::System;
 
