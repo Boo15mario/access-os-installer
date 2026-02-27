@@ -1,7 +1,7 @@
 mod backend;
 
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, PasswordEntry, Align};
+use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Label, Orientation, Align, Stack, StackTransitionType};
 
 const APP_ID: &str = "org.accessos.Installer";
 
@@ -19,6 +19,24 @@ fn build_ui(app: &Application) {
         .default_height(500)
         .build();
 
+    let stack = Stack::builder()
+        .transition_type(StackTransitionType::SlideLeftRight)
+        .transition_duration(500)
+        .build();
+
+    // STEP 1: Disk Selection
+    let step1 = build_step1(&stack);
+    stack.add_titled(&step1, Some("disk"), "Disk Selection");
+
+    // STEP 2: Repo Selection
+    let step2 = build_step2(&stack);
+    stack.add_titled(&step2, Some("repo"), "Repo Selection");
+
+    window.set_child(Some(&stack));
+    window.present();
+}
+
+fn build_step1(stack: &Stack) -> Box {
     let vbox = Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -29,55 +47,51 @@ fn build_ui(app: &Application) {
         .build();
 
     let title = Label::builder()
-        .label("Welcome to the access-OS Installer")
+        .label("Step 1: Select Target Drive")
         .margin_bottom(24)
         .build();
 
-    let suggested_swap = backend::get_suggested_swap_gb();
-
-    let drive_label = Label::builder().label("Target Drive (e.g. /dev/sda)").halign(Align::Start).build();
     let drive_entry = Entry::builder().placeholder_text("/dev/sda").build();
+    let next_btn = Button::builder().label("Next: Select Repository").build();
 
-    let user_label = Label::builder().label("New Username").halign(Align::Start).build();
-    let user_entry = Entry::builder().placeholder_text("Username").build();
-
-    let pass_label = Label::builder().label("New Password").halign(Align::Start).build();
-    let pass_entry = PasswordEntry::builder().placeholder_text("Password").build();
-
-    let host_label = Label::builder().label("Hostname").halign(Align::Start).build();
-    let host_entry = Entry::builder().placeholder_text("access-os").build();
-
-    let swap_label = Label::builder()
-        .label(&format!("Swap Size (GB, suggested: {})"), suggested_swap)
-        .halign(Align::Start)
-        .build();
-    let swap_entry = Entry::builder().text(&suggested_swap.to_string()).build();
-
-    let install_btn = Button::builder()
-        .label("Install access-OS")
-        .margin_top(24)
-        .build();
-
-    let status_label = Label::builder()
-        .label("")
-        .halign(Align::Start)
-        .wrap(true)
-        .build();
+    let stack_clone = stack.clone();
+    next_btn.connect_clicked(move |_| {
+        stack_clone.set_visible_child_name("repo");
+    });
 
     vbox.append(&title);
-    vbox.append(&drive_label);
     vbox.append(&drive_entry);
-    vbox.append(&user_label);
-    vbox.append(&user_entry);
-    vbox.append(&pass_label);
-    vbox.append(&pass_entry);
-    vbox.append(&host_label);
-    vbox.append(&host_entry);
-    vbox.append(&swap_label);
-    vbox.append(&swap_entry);
-    vbox.append(&install_btn);
-    vbox.append(&status_label);
+    vbox.append(&next_btn);
+    vbox
+}
 
-    window.set_child(Some(&vbox));
-    window.present();
+fn build_step2(stack: &Stack) -> Box {
+    let vbox = Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .margin_top(24)
+        .margin_bottom(24)
+        .margin_start(24)
+        .margin_end(24)
+        .build();
+
+    let title = Label::builder()
+        .label("Step 2: Enter Configuration Repository URL")
+        .margin_bottom(24)
+        .build();
+
+    let repo_entry = Entry::builder().placeholder_text("https://github.com/user/nix-config").build();
+    let back_btn = Button::builder().label("Back").build();
+    let next_btn = Button::builder().label("Next: Scan Configuration").build();
+
+    let stack_clone = stack.clone();
+    back_btn.connect_clicked(move |_| {
+        stack_clone.set_visible_child_name("disk");
+    });
+
+    vbox.append(&title);
+    vbox.append(&repo_entry);
+    vbox.append(&next_btn);
+    vbox.append(&back_btn);
+    vbox
 }
