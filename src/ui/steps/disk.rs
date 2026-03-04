@@ -2,7 +2,7 @@ use crate::app::state::{DriveOption, SharedState};
 use crate::backend;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{AccessibleRole, Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
 use std::rc::Rc;
 
 pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
@@ -13,7 +13,6 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let drive_combo = ComboBoxText::new();
-    drive_combo.set_accessible_role(AccessibleRole::ComboBox);
     let warning = Label::builder()
         .label("Warning: Installing will erase all data on the selected disk.")
         .halign(Align::Start)

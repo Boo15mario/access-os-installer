@@ -10,8 +10,10 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
+use std::time::Duration;
 
 pub fn run() {
+    prepare_accessibility_environment();
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run();
@@ -71,11 +73,13 @@ fn build_ui(app: &Application) {
         let stack_for_focus = stack.clone();
         stack.connect_visible_child_name_notify(move |stack| {
             if let Some(name) = stack.visible_child_name() {
+                let step_name = name.to_string();
                 match name.as_str() {
                     "preflight" => refresh_preflight(),
                     "review" => refresh_review(),
                     _ => {}
                 }
+                maybe_announce_step(&step_name);
             }
             schedule_focus_visible_step(&stack_for_focus);
         });
@@ -86,6 +90,7 @@ fn build_ui(app: &Application) {
     window.fullscreen();
     window.present();
     schedule_focus_visible_step(&stack);
+    maybe_announce_step("welcome");
     schedule_startup_sound();
 }
 
@@ -128,7 +133,7 @@ fn initial_state() -> SharedState {
 }
 
 fn schedule_startup_sound() {
-    if is_orca_running() {
+    if is_orca_running() || is_screen_reader_setting_enabled() {
         return;
     }
 
@@ -142,8 +147,13 @@ fn schedule_startup_sound() {
 }
 
 fn is_orca_running() -> bool {
+    // Orca may appear as "orca" or as a Python command line that includes "orca".
+    if command_succeeds("pgrep", &["-x", "orca"]) {
+        return true;
+    }
+
     Command::new("pgrep")
-        .args(["-x", "orca"])
+        .args(["-f", "(^|/)orca([[:space:]]|$)"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
@@ -151,9 +161,18 @@ fn is_orca_running() -> bool {
 
 fn schedule_focus_visible_step(stack: &Stack) {
     let stack = stack.clone();
-    gtk4::glib::idle_add_local_once(move || {
+    let mut attempts = 0u8;
+    gtk4::glib::timeout_add_local(Duration::from_millis(60), move || {
+        attempts = attempts.saturating_add(1);
         if let Some(step) = stack.visible_child() {
-            focus_first_interactive(&step);
+            if focus_first_interactive(&step) {
+                return gtk4::glib::ControlFlow::Break;
+            }
+        }
+        if attempts >= 20 {
+            gtk4::glib::ControlFlow::Break
+        } else {
+            gtk4::glib::ControlFlow::Continue
         }
     });
 }
@@ -174,6 +193,92 @@ fn focus_first_interactive(widget: &Widget) -> bool {
     }
 
     false
+}
+
+fn maybe_announce_step(step_name: &str) {
+    if !is_orca_running() {
+        return;
+    }
+
+    let message = match step_name {
+        "welcome" => "Welcome to the access O S installer. Press Get Started to continue.",
+        "wifi" => "Wi-Fi setup. Choose a network and connect, or skip if already online.",
+        "disk" => "Disk selection. Choose the internal target drive.",
+        "disk_setup" => "Disk setup. Choose automatic or manual partitioning options.",
+        "desktop_env" => "Desktop environment selection.",
+        "mirror" => "Mirror region selection.",
+        "settings" => "User and system settings.",
+        "preflight" => "Preflight checks.",
+        "review" => "Review summary. Confirm settings before installation.",
+        "install" => "Installation step.",
+        "complete" => "Installation complete. Choose reboot or exit.",
+        _ => "",
+    };
+
+    if message.is_empty() {
+        return;
+    }
+
+    let speech = message.to_string();
+    std::thread::spawn(move || {
+        if run_speech_command("spd-say", &["-w", &speech]).is_ok() {
+            return;
+        }
+
+        if run_speech_command("espeak-ng", &[&speech]).is_ok() {
+            return;
+        }
+
+        let _ = run_speech_command("espeak", &[&speech]);
+    });
+}
+
+fn run_speech_command(program: &str, args: &[&str]) -> Result<(), String> {
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{} failed to execute: {}", program, e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("{} exited with {}", program, output.status))
+    }
+}
+
+fn command_succeeds(program: &str, args: &[&str]) -> bool {
+    Command::new(program)
+        .args(args)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn is_screen_reader_setting_enabled() -> bool {
+    let output = match Command::new("gsettings")
+        .args([
+            "get",
+            "org.gnome.desktop.a11y.applications",
+            "screen-reader-enabled",
+        ])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    String::from_utf8_lossy(&output.stdout).contains("true")
+}
+
+fn prepare_accessibility_environment() {
+    if std::env::var_os("GTK_A11Y").is_none() {
+        std::env::set_var("GTK_A11Y", "1");
+    }
+    std::env::remove_var("NO_AT_BRIDGE");
 }
 
 fn play_startup_sound() -> Result<(), String> {

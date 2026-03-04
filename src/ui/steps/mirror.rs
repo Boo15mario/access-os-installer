@@ -2,7 +2,7 @@ use crate::app::constants::MIRROR_REGIONS;
 use crate::app::state::SharedState;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{AccessibleRole, Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
 
 pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
     let vbox = padded_box(12, 24);
@@ -12,7 +12,6 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let region_combo = ComboBoxText::new();
-    region_combo.set_accessible_role(AccessibleRole::ComboBox);
     for region in MIRROR_REGIONS {
         region_combo.append_text(region);
     }

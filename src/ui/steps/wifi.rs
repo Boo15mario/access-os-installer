@@ -1,7 +1,7 @@
 use crate::backend::network;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{AccessibleRole, Align, Box, Button, ComboBoxText, Label, PasswordEntry, Stack};
+use gtk4::{Align, Box, Button, ComboBoxText, Label, PasswordEntry, Stack};
 
 pub fn build_wifi_step(stack: &Stack) -> Box {
     let vbox = padded_box(12, 24);
@@ -13,7 +13,6 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .build();
 
     let ssid_combo = ComboBoxText::new();
-    ssid_combo.set_accessible_role(AccessibleRole::ComboBox);
     for ssid in network::scan_wifi() {
         ssid_combo.append_text(&ssid);
     }

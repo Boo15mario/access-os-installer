@@ -3,8 +3,7 @@ use crate::backend::config_engine::{DesktopEnv, KernelVariant};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{
-    AccessibleRole, Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, PasswordEntry,
-    Stack,
+    Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, PasswordEntry, Stack,
 };
 use std::rc::Rc;
 
@@ -28,7 +27,6 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     let keymap_entry = Entry::builder().text("us").build();
 
     let kernel_combo = ComboBoxText::new();
-    kernel_combo.set_accessible_role(AccessibleRole::ComboBox);
     for kernel in KernelVariant::all() {
         kernel_combo.append_text(kernel.label());
     }

@@ -2,7 +2,7 @@ use crate::app::state::SharedState;
 use crate::backend::config_engine::DesktopEnv;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{AccessibleRole, Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
 
 pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
     let vbox = padded_box(12, 24);
@@ -12,7 +12,6 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let de_combo = ComboBoxText::new();
-    de_combo.set_accessible_role(AccessibleRole::ComboBox);
     for de in DesktopEnv::all() {
         de_combo.append_text(de.label());
     }

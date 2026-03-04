@@ -4,9 +4,7 @@ use crate::backend::storage_plan::{resolve_layout, HomeLocation, HomeMode, Setup
 use crate::mappers::storage::storage_selection_from_state;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{
-    AccessibleRole, Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, Stack,
-};
+use gtk4::{Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, Stack};
 use std::rc::Rc;
 
 pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
@@ -22,22 +20,18 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let setup_mode_combo = ComboBoxText::new();
-    setup_mode_combo.set_accessible_role(AccessibleRole::ComboBox);
     setup_mode_combo.append_text("Automatic");
     setup_mode_combo.append_text("Manual");
 
     let home_mode_combo = ComboBoxText::new();
-    home_mode_combo.set_accessible_role(AccessibleRole::ComboBox);
     home_mode_combo.append_text("Home on root filesystem");
     home_mode_combo.append_text("Separate /home");
 
     let home_location_combo = ComboBoxText::new();
-    home_location_combo.set_accessible_role(AccessibleRole::ComboBox);
     home_location_combo.append_text("Same disk");
     home_location_combo.append_text("Another disk");
 
     let swap_mode_combo = ComboBoxText::new();
-    swap_mode_combo.set_accessible_role(AccessibleRole::ComboBox);
     swap_mode_combo.append_text("Swap partition");
     swap_mode_combo.append_text("Swap file");
 
@@ -56,7 +50,6 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .collect();
     let home_disk_labels: Vec<String> = home_disk_paths.iter().map(|path| path.to_string()).collect();
     let home_disk_combo = ComboBoxText::new();
-    home_disk_combo.set_accessible_role(AccessibleRole::ComboBox);
     for label in &home_disk_labels {
         home_disk_combo.append_text(label);
     }
@@ -78,7 +71,6 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     let home_combo = ComboBoxText::new();
     let swap_combo = ComboBoxText::new();
     for combo in [&efi_combo, &root_combo, &home_combo, &swap_combo] {
-        combo.set_accessible_role(AccessibleRole::ComboBox);
         for label in &partition_labels {
             combo.append_text(label);
         }

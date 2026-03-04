@@ -8,7 +8,7 @@ use crate::services::mirror::apply_mirror_region;
 use crate::services::mount::prepare_install_targets;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{AccessibleRole, Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,7 +19,6 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .margin_bottom(24)
         .build();
     let fs_combo = ComboBoxText::new();
-    fs_combo.set_accessible_role(AccessibleRole::ComboBox);
     fs_combo.append_text("xfs");
     fs_combo.append_text("ext4");
     if state.borrow().fs_type == "ext4" {
