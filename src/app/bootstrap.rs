@@ -7,6 +7,8 @@ use crate::ui::steps;
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Stack, StackTransitionType};
 use std::cell::RefCell;
+use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 
 pub fn run() {
@@ -81,6 +83,7 @@ fn build_ui(app: &Application) {
     stack.set_visible_child_name("welcome");
     window.fullscreen();
     window.present();
+    schedule_startup_sound();
 }
 
 fn initial_state() -> SharedState {
@@ -119,4 +122,71 @@ fn initial_state() -> SharedState {
         preflight_results: Vec::new(),
         resolved_layout: None,
     }))
+}
+
+fn schedule_startup_sound() {
+    gtk4::glib::idle_add_local_once(|| {
+        std::thread::spawn(|| {
+            if let Err(e) = play_startup_sound() {
+                eprintln!("Startup sound unavailable: {}", e);
+            }
+        });
+    });
+}
+
+fn play_startup_sound() -> Result<(), String> {
+    if let Some(sound_file) = find_startup_sound_file() {
+        let sound_file_arg = sound_file.to_string_lossy().to_string();
+        if run_sound_command("paplay", &[&sound_file_arg]).is_ok()
+            || run_sound_command("pw-play", &[&sound_file_arg]).is_ok()
+            || run_sound_command("aplay", &[&sound_file_arg]).is_ok()
+        {
+            return Ok(());
+        }
+    }
+
+    if run_sound_command("canberra-gtk-play", &["-i", "desktop-login"]).is_ok()
+        || run_sound_command("canberra-gtk-play", &["-i", "bell"]).is_ok()
+    {
+        return Ok(());
+    }
+
+    Err("no working playback command found".to_string())
+}
+
+fn run_sound_command(program: &str, args: &[&str]) -> Result<(), String> {
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{} failed to execute: {}", program, e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(format!("{} exited with {}", program, output.status))
+        } else {
+            Err(format!("{}: {}", program, stderr))
+        }
+    }
+}
+
+fn find_startup_sound_file() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("assets/startup-digital-pluck.ogg"));
+        candidates.push(cwd.join("assets/startup-digital-pluck.wav"));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("assets/startup-digital-pluck.ogg"));
+            candidates.push(exe_dir.join("assets/startup-digital-pluck.wav"));
+            candidates.push(exe_dir.join("../assets/startup-digital-pluck.ogg"));
+            candidates.push(exe_dir.join("../assets/startup-digital-pluck.wav"));
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
 }
