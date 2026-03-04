@@ -229,7 +229,7 @@ fn is_screen_reader_setting_enabled() -> bool {
 
 fn prepare_accessibility_environment() {
     if std::env::var_os("GTK_A11Y").is_none() {
-        std::env::set_var("GTK_A11Y", "1");
+        std::env::set_var("GTK_A11Y", "atspi");
     }
     std::env::remove_var("NO_AT_BRIDGE");
 }
