@@ -196,54 +196,7 @@ fn focus_first_interactive(widget: &Widget) -> bool {
 }
 
 fn maybe_announce_step(step_name: &str) {
-    if !is_orca_running() {
-        return;
-    }
-
-    let message = match step_name {
-        "welcome" => "Welcome to the access O S installer. Press Get Started to continue.",
-        "wifi" => "Wi-Fi setup. Choose a network and connect, or skip if already online.",
-        "disk" => "Disk selection. Choose the internal target drive.",
-        "disk_setup" => "Disk setup. Choose automatic or manual partitioning options.",
-        "desktop_env" => "Desktop environment selection.",
-        "mirror" => "Mirror region selection.",
-        "settings" => "User and system settings.",
-        "preflight" => "Preflight checks.",
-        "review" => "Review summary. Confirm settings before installation.",
-        "install" => "Installation step.",
-        "complete" => "Installation complete. Choose reboot or exit.",
-        _ => "",
-    };
-
-    if message.is_empty() {
-        return;
-    }
-
-    let speech = message.to_string();
-    std::thread::spawn(move || {
-        if run_speech_command("spd-say", &["-w", &speech]).is_ok() {
-            return;
-        }
-
-        if run_speech_command("espeak-ng", &[&speech]).is_ok() {
-            return;
-        }
-
-        let _ = run_speech_command("espeak", &[&speech]);
-    });
-}
-
-fn run_speech_command(program: &str, args: &[&str]) -> Result<(), String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| format!("{} failed to execute: {}", program, e))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!("{} exited with {}", program, output.status))
-    }
+    let _ = step_name;
 }
 
 fn command_succeeds(program: &str, args: &[&str]) -> bool {
