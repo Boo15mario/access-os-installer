@@ -175,16 +175,16 @@ fn run_sound_command(program: &str, args: &[&str]) -> Result<(), String> {
 fn find_startup_sound_file() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("assets/startup-digital-pluck.ogg"));
-        candidates.push(cwd.join("assets/startup-digital-pluck.wav"));
+        candidates.push(cwd.join("assets/login.wav"));
+        candidates.push(cwd.join("assets/login.ogg"));
     }
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            candidates.push(exe_dir.join("assets/startup-digital-pluck.ogg"));
-            candidates.push(exe_dir.join("assets/startup-digital-pluck.wav"));
-            candidates.push(exe_dir.join("../assets/startup-digital-pluck.ogg"));
-            candidates.push(exe_dir.join("../assets/startup-digital-pluck.wav"));
+            candidates.push(exe_dir.join("assets/login.wav"));
+            candidates.push(exe_dir.join("assets/login.ogg"));
+            candidates.push(exe_dir.join("../assets/login.wav"));
+            candidates.push(exe_dir.join("../assets/login.ogg"));
         }
     }
 
