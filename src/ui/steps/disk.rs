@@ -31,6 +31,8 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
         .vexpand(true)
         .min_content_height(120)
         .build();
+    // Ensure our focus heuristic focuses the actual list, not the scroller container.
+    drive_scroller.set_focusable(false);
     let warning = Label::builder()
         .label("Warning: Installing will erase all data on the selected disk.")
         .halign(Align::Start)
@@ -39,6 +41,7 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
     let next_btn = Button::builder().label("Next: Disk Setup").build();
     next_btn.set_sensitive(false);
+    next_btn.set_focusable(false);
     apply_button_role(&next_btn);
 
     let mut drive_options_data: Vec<DriveOption> = Vec::new();
@@ -49,7 +52,7 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
             );
         }
         Ok(devices) => {
-            for device in devices {
+            for (idx, device) in devices.into_iter().enumerate() {
                 let path = format!("/dev/{}", device.name);
                 let model = device
                     .model
@@ -61,7 +64,12 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
                 let disk_gib = backend::disk_manager::bytes_to_gib(device.size_bytes);
                 let row_label = format!("{} | {} | {} | {}", path, size_label, model, transport);
                 let row = ListBoxRow::new();
+                row.set_focusable(true);
                 row.set_accessible_role(AccessibleRole::ListItem);
+                if idx == 0 {
+                    // Prefer focusing the first drive row; ListBox itself doesn't always accept focus.
+                    row.set_widget_name("a11y-default-focus");
+                }
                 set_accessible_label(&row, &row_label);
                 let label = Label::new(Some(&row_label));
                 label.set_xalign(0.0);
@@ -81,7 +89,9 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
     {
         let next_btn = next_btn.clone();
         drive_list.connect_row_selected(move |_, row| {
-            next_btn.set_sensitive(row.is_some());
+            let has_selection = row.is_some();
+            next_btn.set_sensitive(has_selection);
+            next_btn.set_focusable(has_selection);
         });
     }
 

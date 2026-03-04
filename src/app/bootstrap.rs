@@ -170,6 +170,21 @@ fn schedule_focus_visible_step(stack: &Stack) {
     gtk4::glib::timeout_add_local(Duration::from_millis(60), move || {
         attempts = attempts.saturating_add(1);
         if let Some(step) = stack.visible_child() {
+            if let Some(target) = find_widget_named(&step, "a11y-default-focus") {
+                if target.is_visible()
+                    && target.is_sensitive()
+                    && target.is_focusable()
+                    && target.grab_focus()
+                {
+                    return gtk4::glib::ControlFlow::Break;
+                }
+
+                // Give the default widget a chance to become focusable/mapped before falling back.
+                if attempts < 10 {
+                    return gtk4::glib::ControlFlow::Continue;
+                }
+            }
+
             if focus_first_interactive(&step) {
                 return gtk4::glib::ControlFlow::Break;
             }
@@ -180,6 +195,22 @@ fn schedule_focus_visible_step(stack: &Stack) {
             gtk4::glib::ControlFlow::Continue
         }
     });
+}
+
+fn find_widget_named(widget: &Widget, name: &str) -> Option<Widget> {
+    if widget.widget_name() == name {
+        return Some(widget.clone());
+    }
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_widget_named(&current, name) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+
+    None
 }
 
 fn focus_first_interactive(widget: &Widget) -> bool {

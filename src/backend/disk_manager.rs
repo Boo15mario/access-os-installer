@@ -22,13 +22,29 @@ fn run_command(program: &str, args: &[&str], context: &str) -> Result<(), String
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum RmFlag {
+    Bool(bool),
+    Int(u8),
+}
+
+impl RmFlag {
+    fn is_removable(&self) -> bool {
+        match self {
+            Self::Bool(value) => *value,
+            Self::Int(value) => *value != 0,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
 pub struct BlockDevice {
     pub name: String,
     #[serde(rename = "size")]
     pub size_bytes: u64,
     pub model: Option<String>,
     pub tran: Option<String>,
-    pub rm: Option<u8>,
+    pub rm: Option<RmFlag>,
     #[serde(rename = "type")]
     pub device_type: String,
 }
@@ -51,6 +67,14 @@ pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
         .args(&["-b", "-J", "-o", "NAME,SIZE,MODEL,TRAN,TYPE,RM"])
         .output()
         .map_err(|e| format!("Failed to execute lsblk: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err(format!("lsblk exited with {}", output.status));
+        }
+        return Err(format!("lsblk: {}", stderr));
+    }
 
     let decoded: LsblkOutput = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Failed to parse lsblk JSON: {}", e))?;
@@ -120,7 +144,7 @@ fn is_internal_device(device: &BlockDevice) -> bool {
         return false;
     }
 
-    if device.rm == Some(1) {
+    if device.rm.as_ref().is_some_and(|rm| rm.is_removable()) {
         return false;
     }
 
@@ -385,10 +409,15 @@ pub fn setup_swap_file(layout: &ResolvedInstallLayout) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockDevice, get_internal_block_devices, is_internal_device, partition_device_path,
+        BlockDevice, RmFlag, get_internal_block_devices, is_internal_device, partition_device_path,
     };
 
-    fn fixture_device(name: &str, device_type: &str, tran: Option<&str>, rm: Option<u8>) -> BlockDevice {
+    fn fixture_device(
+        name: &str,
+        device_type: &str,
+        tran: Option<&str>,
+        rm: Option<RmFlag>,
+    ) -> BlockDevice {
         BlockDevice {
             name: name.to_string(),
             size_bytes: 100 * 1024 * 1024 * 1024,
@@ -401,9 +430,9 @@ mod tests {
 
     #[test]
     fn internal_filter_excludes_usb_or_removable_disks() {
-        let sata = fixture_device("sda", "disk", Some("sata"), Some(0));
-        let usb = fixture_device("sdb", "disk", Some("usb"), Some(1));
-        let partition = fixture_device("sda1", "part", Some("sata"), Some(0));
+        let sata = fixture_device("sda", "disk", Some("sata"), Some(RmFlag::Int(0)));
+        let usb = fixture_device("sdb", "disk", Some("usb"), Some(RmFlag::Int(1)));
+        let partition = fixture_device("sda1", "part", Some("sata"), Some(RmFlag::Int(0)));
 
         assert!(is_internal_device(&sata));
         assert!(!is_internal_device(&usb));
@@ -412,7 +441,7 @@ mod tests {
 
     #[test]
     fn internal_filter_allows_unknown_transport_non_removable_disks() {
-        let nvme = fixture_device("nvme0n1", "disk", None, Some(0));
+        let nvme = fixture_device("nvme0n1", "disk", None, Some(RmFlag::Int(0)));
         let unknown_rm = fixture_device("vda", "disk", None, None);
 
         assert!(is_internal_device(&nvme));
