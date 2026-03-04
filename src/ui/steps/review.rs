@@ -2,6 +2,7 @@ use crate::app::state::SharedState;
 use crate::backend::preflight::CheckStatus;
 use crate::backend::storage_plan::{format_destructive_plan, resolve_layout};
 use crate::mappers::storage::{format_review_summary, format_warning_lines, storage_selection_from_state};
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, CheckButton, Label, Stack};
@@ -27,6 +28,8 @@ pub fn build_review_step(stack: &Stack, state: SharedState) -> (Box, Rc<dyn Fn()
 
     let continue_btn = Button::builder().label("Next: Start Installation").build();
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&continue_btn);
+    apply_button_role(&back_btn);
 
     let layout_valid = Rc::new(RefCell::new(false));
     let countdown_ready = Rc::new(RefCell::new(false));

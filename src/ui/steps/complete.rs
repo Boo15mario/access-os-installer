@@ -1,6 +1,7 @@
 use crate::app::state::SharedState;
 use crate::services::mount::unmount_install_targets;
 use crate::services::power::{reboot_system, shutdown_system};
+use crate::ui::common::a11y::{apply_button_role, apply_textbox_role, build_mnemonic_label};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, ApplicationWindow, Box, Button, Entry, Label};
@@ -21,6 +22,7 @@ pub fn build_complete_step(window: &ApplicationWindow, _state: SharedState) -> B
     let packages_entry = Entry::builder()
         .placeholder_text("Additional packages (space-separated)")
         .build();
+    apply_textbox_role(&packages_entry);
     let install_packages_btn = Button::builder().label("Install Additional Packages").build();
     let reboot_btn = Button::builder().label("Reboot").build();
     let shutdown_btn = Button::builder().label("Shutdown").build();
@@ -28,6 +30,13 @@ pub fn build_complete_step(window: &ApplicationWindow, _state: SharedState) -> B
     let force_reboot_btn = Button::builder().label("Force Reboot").build();
     let force_shutdown_btn = Button::builder().label("Force Shutdown").build();
     let force_exit_btn = Button::builder().label("Force Exit").build();
+    apply_button_role(&install_packages_btn);
+    apply_button_role(&reboot_btn);
+    apply_button_role(&shutdown_btn);
+    apply_button_role(&unmount_exit_btn);
+    apply_button_role(&force_reboot_btn);
+    apply_button_role(&force_shutdown_btn);
+    apply_button_role(&force_exit_btn);
     force_reboot_btn.set_visible(false);
     force_shutdown_btn.set_visible(false);
     force_exit_btn.set_visible(false);
@@ -172,6 +181,8 @@ pub fn build_complete_step(window: &ApplicationWindow, _state: SharedState) -> B
 
     vbox.append(&title);
     vbox.append(&status_label);
+    let packages_label = build_mnemonic_label("_Additional packages", &packages_entry);
+    vbox.append(&packages_label);
     vbox.append(&packages_entry);
     vbox.append(&install_packages_btn);
     vbox.append(&reboot_btn);

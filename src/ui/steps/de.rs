@@ -1,5 +1,6 @@
 use crate::app::state::SharedState;
 use crate::backend::config_engine::DesktopEnv;
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
@@ -26,6 +27,8 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
 
     let next_btn = Button::builder().label("Next: Mirror Region").build();
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&next_btn);
+    apply_button_role(&back_btn);
 
     let update_selection = {
         let description_label = description_label.clone();

@@ -6,6 +6,7 @@ use crate::mappers::storage::storage_selection_from_state;
 use crate::services::log::append_log_line;
 use crate::services::mirror::apply_mirror_region;
 use crate::services::mount::prepare_install_targets;
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
@@ -40,6 +41,9 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
     let start_btn = Button::builder().label("Start Installation").build();
     let retry_pacstrap_btn = Button::builder().label("Retry pacstrap").build();
     let retry_config_btn = Button::builder().label("Retry configuration").build();
+    apply_button_role(&start_btn);
+    apply_button_role(&retry_pacstrap_btn);
+    apply_button_role(&retry_config_btn);
     retry_pacstrap_btn.set_visible(false);
     retry_config_btn.set_visible(false);
     let install_password = Rc::new(RefCell::new(None::<String>));

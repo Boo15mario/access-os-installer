@@ -1,5 +1,6 @@
 use crate::app::state::{DriveOption, SharedState};
 use crate::backend;
+use crate::ui::common::a11y::{apply_button_role, set_accessible_description, set_accessible_label};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
@@ -13,6 +14,11 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let drive_combo = ComboBoxText::new();
+    set_accessible_label(&drive_combo, "Target Internal Drive");
+    set_accessible_description(
+        &drive_combo,
+        "Select the internal drive that will be erased and used for installation.",
+    );
     let warning = Label::builder()
         .label("Warning: Installing will erase all data on the selected disk.")
         .halign(Align::Start)
@@ -21,6 +27,7 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
     let next_btn = Button::builder().label("Next: Disk Setup").build();
     next_btn.set_sensitive(false);
+    apply_button_role(&next_btn);
 
     let mut drive_options_data: Vec<DriveOption> = Vec::new();
     match backend::disk_manager::get_internal_block_devices() {

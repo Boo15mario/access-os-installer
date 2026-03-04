@@ -1,4 +1,5 @@
 use crate::backend::network;
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, Label, Stack};
@@ -22,6 +23,7 @@ pub fn build_welcome_step(stack: &Stack) -> Box {
         .build();
 
     let start_btn = Button::builder().label("Get Started").margin_top(16).build();
+    apply_button_role(&start_btn);
 
     {
         let stack = stack.clone();

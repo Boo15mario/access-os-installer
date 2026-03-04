@@ -1,4 +1,7 @@
 use crate::backend::network;
+use crate::ui::common::a11y::{
+    apply_button_role, apply_textbox_role, set_accessible_description, set_accessible_label,
+};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, ComboBoxText, Label, PasswordEntry, Stack};
@@ -13,6 +16,8 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .build();
 
     let ssid_combo = ComboBoxText::new();
+    set_accessible_label(&ssid_combo, "Available Networks");
+    set_accessible_description(&ssid_combo, "Use arrow keys to choose a network.");
     for ssid in network::scan_wifi() {
         ssid_combo.append_text(&ssid);
     }
@@ -20,11 +25,15 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .placeholder_text("Wi-Fi Password")
         .show_peek_icon(true)
         .build();
+    apply_textbox_role(&pass_entry);
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
 
     let connect_btn = Button::builder().label("Connect").build();
     let refresh_btn = Button::builder().label("Refresh Networks").build();
     let skip_btn = Button::builder().label("Skip (already connected)").build();
+    apply_button_role(&connect_btn);
+    apply_button_role(&refresh_btn);
+    apply_button_role(&skip_btn);
 
     {
         let ssid_combo = ssid_combo.clone();

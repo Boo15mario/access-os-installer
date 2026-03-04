@@ -1,6 +1,7 @@
 use crate::app::state::SharedState;
 use crate::backend::preflight;
 use crate::mappers::storage::{format_check_group, preflight_context_from_state};
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, Label, Stack};
@@ -26,6 +27,9 @@ pub fn build_preflight_step(stack: &Stack, state: SharedState) -> (Box, Rc<dyn F
     let continue_btn = Button::builder().label("Next: Review & Confirm").build();
     continue_btn.set_sensitive(false);
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&rerun_btn);
+    apply_button_role(&continue_btn);
+    apply_button_role(&back_btn);
 
     let refresh_preflight: Rc<dyn Fn()> = {
         let state = state.clone();

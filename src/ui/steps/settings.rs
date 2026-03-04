@@ -1,5 +1,6 @@
 use crate::app::state::SharedState;
 use crate::backend::config_engine::{DesktopEnv, KernelVariant};
+use crate::ui::common::a11y::{apply_button_role, apply_textbox_role, build_mnemonic_label};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{
@@ -25,6 +26,12 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     let tz_entry = Entry::builder().text("America/Chicago").build();
     let locale_entry = Entry::builder().text("en_US.UTF-8").build();
     let keymap_entry = Entry::builder().text("us").build();
+    apply_textbox_role(&hostname_entry);
+    apply_textbox_role(&user_entry);
+    apply_textbox_role(&pass_entry);
+    apply_textbox_role(&tz_entry);
+    apply_textbox_role(&locale_entry);
+    apply_textbox_role(&keymap_entry);
 
     let kernel_combo = ComboBoxText::new();
     for kernel in KernelVariant::all() {
@@ -57,6 +64,8 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
 
     let next_btn = Button::builder().label("Next: Run Preflight Checks").build();
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&next_btn);
+    apply_button_role(&back_btn);
 
     let refresh_nvidia_toggle: Rc<dyn Fn()> = {
         let state = state.clone();
@@ -161,17 +170,23 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     }
 
     vbox.append(&title);
-    vbox.append(&Label::new(Some("Hostname")));
+    let hostname_label = build_mnemonic_label("_Hostname", &hostname_entry);
+    vbox.append(&hostname_label);
     vbox.append(&hostname_entry);
-    vbox.append(&Label::new(Some("Username")));
+    let username_label = build_mnemonic_label("_Username", &user_entry);
+    vbox.append(&username_label);
     vbox.append(&user_entry);
-    vbox.append(&Label::new(Some("Password")));
+    let password_label = build_mnemonic_label("_Password", &pass_entry);
+    vbox.append(&password_label);
     vbox.append(&pass_entry);
-    vbox.append(&Label::new(Some("Timezone")));
+    let timezone_label = build_mnemonic_label("_Timezone", &tz_entry);
+    vbox.append(&timezone_label);
     vbox.append(&tz_entry);
-    vbox.append(&Label::new(Some("Locale")));
+    let locale_label = build_mnemonic_label("_Locale", &locale_entry);
+    vbox.append(&locale_label);
     vbox.append(&locale_entry);
-    vbox.append(&Label::new(Some("Keymap")));
+    let keymap_label = build_mnemonic_label("Key_map", &keymap_entry);
+    vbox.append(&keymap_label);
     vbox.append(&keymap_entry);
     let kernel_label = Label::new(Some("_Kernel"));
     kernel_label.set_use_underline(true);

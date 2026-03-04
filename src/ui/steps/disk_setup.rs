@@ -2,6 +2,9 @@ use crate::app::state::SharedState;
 use crate::backend;
 use crate::backend::storage_plan::{resolve_layout, HomeLocation, HomeMode, SetupMode, SwapMode};
 use crate::mappers::storage::storage_selection_from_state;
+use crate::ui::common::a11y::{
+    apply_button_role, apply_textbox_role, build_mnemonic_label, set_accessible_description,
+};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, Stack};
@@ -38,6 +41,11 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     let swap_file_entry = Entry::builder()
         .placeholder_text("Swap file size in MB")
         .build();
+    apply_textbox_role(&swap_file_entry);
+    set_accessible_description(
+        &swap_file_entry,
+        "Only used when swap mode is set to Swap file.",
+    );
 
     let removable_check = CheckButton::builder()
         .label("Install to removable media")
@@ -85,6 +93,8 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
     let next_btn = Button::builder().label("Next: Select Desktop Environment").build();
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&next_btn);
+    apply_button_role(&back_btn);
 
     {
         let app_state = state.borrow();
@@ -335,7 +345,8 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     vbox.append(&swap_mode_label);
     vbox.append(&swap_mode_combo);
 
-    vbox.append(&Label::new(Some("Swap file size (MB)")));
+    let swap_file_label = build_mnemonic_label("Swap file size (_MB)", &swap_file_entry);
+    vbox.append(&swap_file_label);
     vbox.append(&swap_file_entry);
     vbox.append(&removable_check);
 

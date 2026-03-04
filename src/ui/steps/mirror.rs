@@ -1,5 +1,6 @@
 use crate::app::constants::MIRROR_REGIONS;
 use crate::app::state::SharedState;
+use crate::ui::common::a11y::apply_button_role;
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
@@ -28,6 +29,8 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
 
     let next_btn = Button::builder().label("Next: User Settings").build();
     let back_btn = Button::builder().label("Back").build();
+    apply_button_role(&next_btn);
+    apply_button_role(&back_btn);
 
     {
         let state = state.clone();
