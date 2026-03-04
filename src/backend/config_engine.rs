@@ -1,129 +1,225 @@
-use std::process::Command;
-use std::fs;
-use std::path::Path;
-
-pub fn clone_repo_to_temp(url: &str) -> Result<String, String> {
-    let temp_dir = "/tmp/installer-source";
-    
-    // Clean up if it already exists
-    if Path::new(temp_dir).exists() {
-        fs::remove_dir_all(temp_dir).map_err(|e| format!("Failed to remove existing temp dir: {}", e))?;
-    }
-
-    let output = Command::new("git")
-        .args(&["clone", "--depth", "1", url, temp_dir])
-        .output()
-        .map_err(|e| format!("Failed to execute git clone: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
-
-    Ok(temp_dir.to_string())
+#[derive(Clone, Debug, PartialEq)]
+pub enum DesktopEnv {
+    Gnome,
+    Kde,
+    Server,
+    Niri,
 }
 
-pub fn list_hosts(path: &str) -> Vec<String> {
-    let mut hosts = Vec::new();
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return hosts,
-    };
+impl DesktopEnv {
+    pub fn all() -> &'static [DesktopEnv] {
+        &[
+            DesktopEnv::Gnome,
+            DesktopEnv::Kde,
+            DesktopEnv::Server,
+            DesktopEnv::Niri,
+        ]
+    }
 
-    for entry in entries.flatten() {
-        let entry_path = entry.path();
-        if entry_path.is_dir() {
-            let config_nix = entry_path.join("configuration.nix");
-            if config_nix.exists() {
-                if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
-                    // Filter out some common folders that aren't hosts
-                    if name != ".git" && name != "custom-iso" {
-                        hosts.push(name.to_string());
-                    }
-                }
+    pub fn label(&self) -> &'static str {
+        match self {
+            DesktopEnv::Gnome => "GNOME (Custom)",
+            DesktopEnv::Kde => "KDE Plasma",
+            DesktopEnv::Server => "Server (Headless)",
+            DesktopEnv::Niri => "Niri (Coming Soon)",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            DesktopEnv::Gnome => "GNOME with Access OS custom configuration",
+            DesktopEnv::Kde => "KDE Plasma with default settings",
+            DesktopEnv::Server => {
+                "Headless server profile with Docker, Docker Compose, Tailscale, and SSH"
             }
-        }
-    }
-    hosts
-}
-
-pub struct HostSettings {
-    pub timezone: Option<String>,
-    pub locale: Option<String>,
-    pub keymap: Option<String>,
-}
-
-pub fn check_settings(host_path: &str) -> HostSettings {
-    let mut settings = HostSettings {
-        timezone: None,
-        locale: None,
-        keymap: None,
-    };
-
-    let host_config_path = Path::new(host_path).join("configuration.nix");
-    let content = match fs::read_to_string(host_config_path) {
-        Ok(c) => c,
-        Err(_) => return settings,
-    };
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.contains("time.timeZone") {
-            settings.timezone = extract_value(line);
-        } else if line.contains("i18n.defaultLocale") {
-            settings.locale = extract_value(line);
-        } else if line.contains("console.keyMap") {
-            settings.keymap = extract_value(line);
+            DesktopEnv::Niri => "Niri scrollable tiling Wayland compositor — not yet available",
         }
     }
 
-    settings
-}
-
-fn extract_value(line: &str) -> Option<String> {
-    // Basic logic to extract a string value between quotes
-    let parts: Vec<&str> = line.split('=').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let val_part = parts[1].trim();
-    let val_part = val_part.trim_end_matches(';');
-    let start = val_part.find('"')?;
-    let end = val_part.rfind('"')?;
-    if start < end {
-        Some(val_part[start + 1..end].to_string())
-    } else {
-        None
-    }
-}
-
-pub fn apply_local_settings(host_path: &str, settings: &HostSettings) -> Result<(), String> {
-    let local_settings_path = Path::new(host_path).join("local-settings.nix");
-    let mut content = String::from("{ ... }:\n{\n");
-    
-    if let Some(tz) = &settings.timezone {
-        content.push_str(&format!("  time.timeZone = \"{}\";\n", tz));
-    }
-    if let Some(loc) = &settings.locale {
-        content.push_str(&format!("  i18n.defaultLocale = \"{}\";\n", loc));
-    }
-    if let Some(km) = &settings.keymap {
-        content.push_str(&format!("  console.keyMap = \"{}\";\n", km));
-    }
-    content.push_str("}\n");
-
-    fs::write(&local_settings_path, content).map_err(|e| format!("Failed to write local-settings.nix: {}", e))?;
-
-    // Add import to configuration.nix if not present
-    let config_path = Path::new(host_path).join("configuration.nix");
-    let config_content = fs::read_to_string(&config_path).map_err(|e| format!("Failed to read configuration.nix: {}", e))?;
-    
-    if !config_content.contains("./local-settings.nix") {
-        // Simple injection: find the start of imports or just add it before the first {
-        let new_content = config_content.replacen("imports = [", "imports = [\n    ./local-settings.nix", 1);
-        if new_content != config_content {
-            fs::write(&config_path, new_content).map_err(|e| format!("Failed to update configuration.nix with import: {}", e))?;
+    pub fn packages(&self) -> &'static [&'static str] {
+        match self {
+            DesktopEnv::Gnome => &["gnome", "gnome-tweaks", "gdm", "breeze-gtk"],
+            DesktopEnv::Kde => &["plasma-meta", "kde-applications-meta", "sddm"],
+            DesktopEnv::Server => &["docker", "docker-compose", "tailscale", "openssh"],
+            DesktopEnv::Niri => &["niri", "gdm"],
         }
     }
 
-    Ok(())
+    pub fn extra_services(&self) -> &'static [&'static str] {
+        match self {
+            DesktopEnv::Server => &["docker", "tailscaled", "sshd"],
+            _ => &[],
+        }
+    }
+
+    pub fn display_manager(&self) -> Option<&'static str> {
+        match self {
+            DesktopEnv::Gnome | DesktopEnv::Niri => Some("gdm"),
+            DesktopEnv::Kde => Some("sddm"),
+            DesktopEnv::Server => None,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        match self {
+            DesktopEnv::Gnome | DesktopEnv::Kde | DesktopEnv::Server => true,
+            DesktopEnv::Niri => false,
+        }
+    }
+
+    pub fn from_index(index: usize) -> Option<&'static DesktopEnv> {
+        DesktopEnv::all().get(index)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum KernelVariant {
+    Standard,
+    Lts,
+    Zen,
+    Hardened,
+}
+
+impl KernelVariant {
+    pub fn all() -> &'static [KernelVariant] {
+        &[
+            KernelVariant::Standard,
+            KernelVariant::Lts,
+            KernelVariant::Zen,
+            KernelVariant::Hardened,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            KernelVariant::Standard => "Linux (Standard)",
+            KernelVariant::Lts => "Linux LTS",
+            KernelVariant::Zen => "Linux Zen",
+            KernelVariant::Hardened => "Linux Hardened",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            KernelVariant::Standard => "Latest stable kernel — recommended for most hardware",
+            KernelVariant::Lts => "Long-term support kernel — maximum stability",
+            KernelVariant::Zen => "Performance-tuned kernel — optimized for desktop use",
+            KernelVariant::Hardened => "Security-focused kernel — extra hardening patches",
+        }
+    }
+
+    pub fn packages(&self) -> &'static [&'static str] {
+        match self {
+            KernelVariant::Standard => &["linux", "linux-headers"],
+            KernelVariant::Lts => &["linux-lts", "linux-lts-headers"],
+            KernelVariant::Zen => &["linux-zen", "linux-zen-headers"],
+            KernelVariant::Hardened => &["linux-hardened", "linux-hardened-headers"],
+        }
+    }
+
+    pub fn vmlinuz(&self) -> &'static str {
+        match self {
+            KernelVariant::Standard => "/vmlinuz-linux",
+            KernelVariant::Lts => "/vmlinuz-linux-lts",
+            KernelVariant::Zen => "/vmlinuz-linux-zen",
+            KernelVariant::Hardened => "/vmlinuz-linux-hardened",
+        }
+    }
+
+    pub fn initramfs(&self) -> &'static str {
+        match self {
+            KernelVariant::Standard => "/initramfs-linux.img",
+            KernelVariant::Lts => "/initramfs-linux-lts.img",
+            KernelVariant::Zen => "/initramfs-linux-zen.img",
+            KernelVariant::Hardened => "/initramfs-linux-hardened.img",
+        }
+    }
+
+    pub fn from_index(index: usize) -> Option<&'static KernelVariant> {
+        KernelVariant::all().get(index)
+    }
+}
+
+pub fn base_packages(kernel: &KernelVariant) -> Vec<&'static str> {
+    let mut packages = vec![
+        // Old installer minimal package list, filtered to official Arch repos.
+        "base",
+        "dialog",
+        "alsa-card-profiles",
+        "alsa-firmware",
+        "alsa-utils",
+        "amd-ucode",
+        "archlinux-keyring",
+        "aspell",
+        "aspell-en",
+        "base-devel",
+        "broadcom-wl-dkms",
+        "cifs-utils",
+        "cronie",
+        "dnsmasq",
+        "dosfstools",
+        "edk2-ovmf",
+        "efibootmgr",
+        "espeak-ng",
+        "espeakup",
+        "grub",
+        "icu",
+        "intel-ucode",
+        "iptables-nft",
+        "linux-firmware",
+        "linux-firmware-marvell",
+        "lvm2",
+        "man-db",
+        "man-pages",
+        "mkinitcpio",
+        "mtools",
+        "net-tools",
+        "nano",
+        "networkmanager",
+        "ntfs-3g",
+        "ntp",
+        "openssh",
+        "os-prober",
+        "pacman-contrib",
+        "python",
+        "python-pip",
+        "reflector",
+        "ruby",
+        "rust",
+        "sof-firmware",
+        "traceroute",
+        "ufw",
+        "usbutils",
+        "util-linux",
+        "vim",
+        "xfsprogs",
+        // Required by current installer behavior (dotfiles + enabled services).
+        "sudo",
+        "git",
+        "bluez",
+        "bluez-utils",
+        "cups",
+    ];
+    packages.extend_from_slice(kernel.packages());
+    packages
+}
+
+pub fn nvidia_packages() -> &'static [&'static str] {
+    &["nvidia-dkms", "nvidia-utils", "lib32-nvidia-utils"]
+}
+
+pub fn full_package_list(de: &DesktopEnv, kernel: &KernelVariant, nvidia: bool) -> Vec<&'static str> {
+    let mut combined = base_packages(kernel);
+    combined.extend_from_slice(de.packages());
+    if nvidia {
+        combined.extend_from_slice(nvidia_packages());
+    }
+
+    let mut packages = Vec::new();
+    for pkg in combined {
+        if !packages.contains(&pkg) {
+            packages.push(pkg);
+        }
+    }
+    packages
 }

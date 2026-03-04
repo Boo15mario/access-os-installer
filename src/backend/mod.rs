@@ -3,6 +3,7 @@ pub mod config_engine;
 pub mod install_worker;
 pub mod network;
 pub mod preflight;
+pub mod storage_plan;
 
 use sysinfo::System;
 

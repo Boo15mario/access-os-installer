@@ -1,0 +1,122 @@
+use crate::app::constants::APP_ID;
+use crate::app::state::{AppState, SharedState};
+use crate::backend;
+use crate::backend::config_engine::KernelVariant;
+use crate::backend::storage_plan::{HomeLocation, HomeMode, SetupMode, SwapMode};
+use crate::ui::steps;
+use gtk4::prelude::*;
+use gtk4::{Application, ApplicationWindow, Stack, StackTransitionType};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub fn run() {
+    let app = Application::builder().application_id(APP_ID).build();
+    app.connect_activate(build_ui);
+    app.run();
+}
+
+fn build_ui(app: &Application) {
+    let state = initial_state();
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("access-OS Installer")
+        .default_width(600)
+        .default_height(500)
+        .build();
+
+    let stack = Stack::builder()
+        .transition_type(StackTransitionType::SlideLeftRight)
+        .transition_duration(500)
+        .build();
+
+    let step_welcome = steps::build_welcome_step(&stack);
+    stack.add_titled(&step_welcome, Some("welcome"), "Welcome");
+
+    let step_wifi = steps::build_wifi_step(&stack);
+    stack.add_titled(&step_wifi, Some("wifi"), "Wi-Fi Setup");
+
+    let step_disk = steps::build_disk_step(&stack, state.clone());
+    stack.add_titled(&step_disk, Some("disk"), "Disk Selection");
+
+    let step_disk_setup = steps::build_disk_setup_step(&stack, state.clone());
+    stack.add_titled(&step_disk_setup, Some("disk_setup"), "Disk Setup");
+
+    let step_de = steps::build_de_step(&stack, state.clone());
+    stack.add_titled(&step_de, Some("desktop_env"), "Desktop Environment");
+
+    let step_mirror = steps::build_mirror_step(&stack, state.clone());
+    stack.add_titled(&step_mirror, Some("mirror"), "Mirror Region");
+
+    let step_settings = steps::build_settings_step(&stack, state.clone());
+    stack.add_titled(&step_settings, Some("settings"), "User Settings");
+
+    let (step_preflight, refresh_preflight) = steps::build_preflight_step(&stack, state.clone());
+    stack.add_titled(&step_preflight, Some("preflight"), "Preflight");
+
+    let (step_review, refresh_review) = steps::build_review_step(&stack, state.clone());
+    stack.add_titled(&step_review, Some("review"), "Review");
+
+    let step_install = steps::build_install_step(&stack, state.clone());
+    stack.add_titled(&step_install, Some("install"), "Installing");
+
+    let step_complete = steps::build_complete_step(&window, state.clone());
+    stack.add_titled(&step_complete, Some("complete"), "Complete");
+
+    {
+        let refresh_preflight = refresh_preflight.clone();
+        let refresh_review = refresh_review.clone();
+        stack.connect_visible_child_name_notify(move |stack| {
+            if let Some(name) = stack.visible_child_name() {
+                match name.as_str() {
+                    "preflight" => refresh_preflight(),
+                    "review" => refresh_review(),
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    window.set_child(Some(&stack));
+    stack.set_visible_child_name("welcome");
+    window.fullscreen();
+    window.present();
+}
+
+fn initial_state() -> SharedState {
+    let suggested_swap = backend::get_suggested_swap_gb();
+
+    Rc::new(RefCell::new(AppState {
+        drive: String::new(),
+        selected_disk_gib: None,
+        swap_gb: suggested_swap,
+        swap_mode: SwapMode::Partition,
+        swap_file_mb: suggested_swap * 1024,
+        fs_type: "xfs".to_string(),
+        setup_mode: SetupMode::Automatic,
+        home_mode: HomeMode::OnRoot,
+        home_location: HomeLocation::SameDisk,
+        home_disk: String::new(),
+        manual_efi_partition: String::new(),
+        manual_root_partition: String::new(),
+        manual_home_partition: String::new(),
+        manual_swap_partition: String::new(),
+        format_efi: true,
+        format_root: true,
+        format_home: true,
+        format_swap: true,
+        removable_media: false,
+        desktop_env: None,
+        kernel: KernelVariant::Standard,
+        nvidia: false,
+        hostname: String::new(),
+        username: String::new(),
+        password: String::new(),
+        timezone: "America/Chicago".to_string(),
+        locale: "en_US.UTF-8".to_string(),
+        keymap: "us".to_string(),
+        mirror_region: "Worldwide".to_string(),
+        preflight_results: Vec::new(),
+        resolved_layout: None,
+    }))
+}
