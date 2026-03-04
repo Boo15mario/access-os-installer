@@ -3,7 +3,10 @@ use crate::backend;
 use crate::ui::common::a11y::{apply_button_role, set_accessible_description, set_accessible_label};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{
+    AccessibleRole, Align, Box, Button, Label, ListBox, ListBoxRow, ScrolledWindow, SelectionMode,
+    Stack,
+};
 use std::rc::Rc;
 
 pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
@@ -13,13 +16,21 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
         .margin_bottom(24)
         .build();
 
-    let drive_combo = ComboBoxText::new();
-    drive_combo.set_focusable(true);
-    set_accessible_label(&drive_combo, "Target Internal Drive");
+    let drive_list = ListBox::new();
+    drive_list.set_accessible_role(AccessibleRole::List);
+    drive_list.set_selection_mode(SelectionMode::Single);
+    drive_list.set_focusable(true);
+    set_accessible_label(&drive_list, "Target Internal Drive");
     set_accessible_description(
-        &drive_combo,
-        "Select the internal drive that will be erased and used for installation.",
+        &drive_list,
+        "Use arrow keys to choose the internal drive that will be erased and used for installation.",
     );
+    let drive_scroller = ScrolledWindow::builder()
+        .child(&drive_list)
+        .hexpand(true)
+        .vexpand(true)
+        .min_content_height(120)
+        .build();
     let warning = Label::builder()
         .label("Warning: Installing will erase all data on the selected disk.")
         .halign(Align::Start)
@@ -48,10 +59,15 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
                 let transport = device.tran.unwrap_or_else(|| "internal".to_string());
                 let size_label = backend::disk_manager::human_gib_label(device.size_bytes);
                 let disk_gib = backend::disk_manager::bytes_to_gib(device.size_bytes);
-                drive_combo.append_text(&format!(
-                    "{} | {} | {} | {}",
-                    path, size_label, model, transport
-                ));
+                let row_label = format!("{} | {} | {} | {}", path, size_label, model, transport);
+                let row = ListBoxRow::new();
+                row.set_accessible_role(AccessibleRole::ListItem);
+                set_accessible_label(&row, &row_label);
+                let label = Label::new(Some(&row_label));
+                label.set_xalign(0.0);
+                label.set_wrap(true);
+                row.set_child(Some(&label));
+                drive_list.append(&row);
                 drive_options_data.push(DriveOption { path, disk_gib });
             }
             status_label.set_label("Select the internal drive to install access-OS.");
@@ -64,25 +80,27 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
 
     {
         let next_btn = next_btn.clone();
-        drive_combo.connect_changed(move |combo| {
-            let has_selected_drive = combo.active().is_some();
-            next_btn.set_sensitive(has_selected_drive);
+        drive_list.connect_row_selected(move |_, row| {
+            next_btn.set_sensitive(row.is_some());
         });
     }
 
     {
-        let drive_combo = drive_combo.clone();
+        let drive_list = drive_list.clone();
         let drive_options = drive_options.clone();
         let status_label = status_label.clone();
         let state = state.clone();
         let stack = stack.clone();
         next_btn.connect_clicked(move |_| {
-            let Some(selected_index) = drive_combo.active() else {
+            let Some(selected_index) = drive_list
+                .selected_row()
+                .and_then(|row| usize::try_from(row.index()).ok())
+            else {
                 status_label.set_label("Select a target drive.");
                 return;
             };
 
-            let Some(option) = drive_options.get(selected_index as usize) else {
+            let Some(option) = drive_options.get(selected_index) else {
                 status_label.set_label("Invalid drive selection.");
                 return;
             };
@@ -98,9 +116,9 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
     vbox.append(&title);
     let drive_label = Label::new(Some("_Target Internal Drive"));
     drive_label.set_use_underline(true);
-    drive_label.set_mnemonic_widget(Some(&drive_combo));
+    drive_label.set_mnemonic_widget(Some(&drive_list));
     vbox.append(&drive_label);
-    vbox.append(&drive_combo);
+    vbox.append(&drive_scroller);
     vbox.append(&warning);
     vbox.append(&status_label);
     vbox.append(&next_btn);
