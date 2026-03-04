@@ -5,7 +5,7 @@ use crate::backend::config_engine::KernelVariant;
 use crate::backend::storage_plan::{HomeLocation, HomeMode, SetupMode, SwapMode};
 use crate::ui::steps;
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Stack, StackTransitionType};
+use gtk4::{Application, ApplicationWindow, Stack, StackTransitionType, Widget};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
@@ -68,6 +68,7 @@ fn build_ui(app: &Application) {
     {
         let refresh_preflight = refresh_preflight.clone();
         let refresh_review = refresh_review.clone();
+        let stack_for_focus = stack.clone();
         stack.connect_visible_child_name_notify(move |stack| {
             if let Some(name) = stack.visible_child_name() {
                 match name.as_str() {
@@ -76,6 +77,7 @@ fn build_ui(app: &Application) {
                     _ => {}
                 }
             }
+            schedule_focus_visible_step(&stack_for_focus);
         });
     }
 
@@ -83,6 +85,7 @@ fn build_ui(app: &Application) {
     stack.set_visible_child_name("welcome");
     window.fullscreen();
     window.present();
+    schedule_focus_visible_step(&stack);
     schedule_startup_sound();
 }
 
@@ -125,6 +128,10 @@ fn initial_state() -> SharedState {
 }
 
 fn schedule_startup_sound() {
+    if is_orca_running() {
+        return;
+    }
+
     gtk4::glib::idle_add_local_once(|| {
         std::thread::spawn(|| {
             if let Err(e) = play_startup_sound() {
@@ -132,6 +139,41 @@ fn schedule_startup_sound() {
             }
         });
     });
+}
+
+fn is_orca_running() -> bool {
+    Command::new("pgrep")
+        .args(["-x", "orca"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn schedule_focus_visible_step(stack: &Stack) {
+    let stack = stack.clone();
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(step) = stack.visible_child() {
+            focus_first_interactive(&step);
+        }
+    });
+}
+
+fn focus_first_interactive(widget: &Widget) -> bool {
+    if widget.is_visible() && widget.is_sensitive() && widget.is_focusable() {
+        if widget.grab_focus() {
+            return true;
+        }
+    }
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if focus_first_interactive(&current) {
+            return true;
+        }
+        child = current.next_sibling();
+    }
+
+    false
 }
 
 fn play_startup_sound() -> Result<(), String> {
