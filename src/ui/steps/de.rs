@@ -13,6 +13,7 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let de_combo = ComboBoxText::new();
+    de_combo.set_focusable(true);
     for de in DesktopEnv::all() {
         de_combo.append_text(de.label());
     }

@@ -33,6 +33,11 @@ fn build_ui(app: &Application) {
         .transition_type(StackTransitionType::SlideLeftRight)
         .transition_duration(500)
         .build();
+    if is_orca_running() || is_screen_reader_setting_enabled() {
+        // Animations can interfere with focus/events for screen readers.
+        stack.set_transition_type(StackTransitionType::None);
+        stack.set_transition_duration(0);
+    }
 
     let step_welcome = steps::build_welcome_step(&stack);
     stack.add_titled(&step_welcome, Some("welcome"), "Welcome");

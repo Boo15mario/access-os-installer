@@ -20,6 +20,7 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .margin_bottom(24)
         .build();
     let fs_combo = ComboBoxText::new();
+    fs_combo.set_focusable(true);
     fs_combo.append_text("xfs");
     fs_combo.append_text("ext4");
     if state.borrow().fs_type == "ext4" {

@@ -14,6 +14,7 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let drive_combo = ComboBoxText::new();
+    drive_combo.set_focusable(true);
     set_accessible_label(&drive_combo, "Target Internal Drive");
     set_accessible_description(
         &drive_combo,

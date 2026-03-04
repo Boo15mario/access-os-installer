@@ -34,6 +34,7 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     apply_textbox_role(&keymap_entry);
 
     let kernel_combo = ComboBoxText::new();
+    kernel_combo.set_focusable(true);
     for kernel in KernelVariant::all() {
         kernel_combo.append_text(kernel.label());
     }

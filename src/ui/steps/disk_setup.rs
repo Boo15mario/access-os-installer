@@ -23,18 +23,22 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let setup_mode_combo = ComboBoxText::new();
+    setup_mode_combo.set_focusable(true);
     setup_mode_combo.append_text("Automatic");
     setup_mode_combo.append_text("Manual");
 
     let home_mode_combo = ComboBoxText::new();
+    home_mode_combo.set_focusable(true);
     home_mode_combo.append_text("Home on root filesystem");
     home_mode_combo.append_text("Separate /home");
 
     let home_location_combo = ComboBoxText::new();
+    home_location_combo.set_focusable(true);
     home_location_combo.append_text("Same disk");
     home_location_combo.append_text("Another disk");
 
     let swap_mode_combo = ComboBoxText::new();
+    swap_mode_combo.set_focusable(true);
     swap_mode_combo.append_text("Swap partition");
     swap_mode_combo.append_text("Swap file");
 
@@ -58,6 +62,7 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .collect();
     let home_disk_labels: Vec<String> = home_disk_paths.iter().map(|path| path.to_string()).collect();
     let home_disk_combo = ComboBoxText::new();
+    home_disk_combo.set_focusable(true);
     for label in &home_disk_labels {
         home_disk_combo.append_text(label);
     }
@@ -75,9 +80,13 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .collect();
 
     let efi_combo = ComboBoxText::new();
+    efi_combo.set_focusable(true);
     let root_combo = ComboBoxText::new();
+    root_combo.set_focusable(true);
     let home_combo = ComboBoxText::new();
+    home_combo.set_focusable(true);
     let swap_combo = ComboBoxText::new();
+    swap_combo.set_focusable(true);
     for combo in [&efi_combo, &root_combo, &home_combo, &swap_combo] {
         for label in &partition_labels {
             combo.append_text(label);

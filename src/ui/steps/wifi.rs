@@ -16,6 +16,7 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .build();
 
     let ssid_combo = ComboBoxText::new();
+    ssid_combo.set_focusable(true);
     set_accessible_label(&ssid_combo, "Available Networks");
     set_accessible_description(&ssid_combo, "Use arrow keys to choose a network.");
     for ssid in network::scan_wifi() {

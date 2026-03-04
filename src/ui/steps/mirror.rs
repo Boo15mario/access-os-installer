@@ -13,6 +13,7 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
         .build();
 
     let region_combo = ComboBoxText::new();
+    region_combo.set_focusable(true);
     for region in MIRROR_REGIONS {
         region_combo.append_text(region);
     }
