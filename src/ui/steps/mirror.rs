@@ -175,11 +175,13 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| KEYMAPS[0].to_string());
 
-            let mut s = state.borrow_mut();
-            s.mirror_region = selected_region;
-            s.timezone = selected_tz;
-            s.locale = selected_locale;
-            s.keymap = selected_keymap;
+            {
+                let mut s = state.borrow_mut();
+                s.mirror_region = selected_region;
+                s.timezone = selected_tz;
+                s.locale = selected_locale;
+                s.keymap = selected_keymap;
+            }
             status_label.set_label("");
             stack.set_visible_child_name("settings");
         });
