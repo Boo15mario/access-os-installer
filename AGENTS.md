@@ -19,6 +19,8 @@ Run these from the repo root:
 cargo build          # compile debug binary
 cargo test           # run unit tests
 cargo run            # run the GTK installer locally (requires a display session)
+cargo fmt            # format (rustfmt)
+cargo clippy         # lint (Clippy)
 cargo build --release
 ```
 
@@ -41,12 +43,10 @@ Notes:
 
 ## Commit & Pull Request Guidelines
 
-- Use Conventional Commit style seen in history:
-  - `fix(a11y): ...`, `feat(storage): ...`, `docs: ...`
-- PRs should include:
-  - what changed + why
-  - how it was tested (`cargo test`, plus manual UI/Orca notes)
-  - screenshots/screencast for UI behavior changes
+- Use Conventional Commit style seen in history. Examples: `fix(a11y): ...`, `feat(storage): ...`, `docs: ...`.
+- PRs should explain what changed and why.
+- PRs should state how it was tested (`cargo test`, plus manual UI/Orca notes).
+- PRs should include screenshots/screencast for UI behavior changes.
 
 ## Safety (Installer)
 
