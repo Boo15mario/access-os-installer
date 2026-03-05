@@ -7,6 +7,7 @@ name = "access-os-installer"
 version = "0.1.0"
 dependencies = [
  "gtk4",
+ "installer-core",
  "serde",
  "serde_json",
  "sysinfo",
@@ -480,6 +481,11 @@ dependencies = [
 [[package]]
 name = "installer-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sysinfo",
+]
 
 [[package]]
 name = "itoa"

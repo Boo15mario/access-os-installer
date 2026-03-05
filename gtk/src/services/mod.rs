@@ -1,4 +1,2 @@
 pub mod log;
-pub mod mirror;
-pub mod mount;
-pub mod power;
+pub use installer_core::services::{mirror, mount, power};

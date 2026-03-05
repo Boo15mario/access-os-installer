@@ -1,4 +1,3 @@
-// Shared installer logic (backend + services) will live here.
-
-pub fn _placeholder() {}
+pub mod backend;
+pub mod services;
 
