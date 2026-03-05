@@ -13,6 +13,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "access-os-installer-cli"
+version = "0.1.0"
+dependencies = [
+ "installer-core",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -469,6 +476,10 @@ dependencies = [
  "equivalent",
  "hashbrown",
 ]
+
+[[package]]
+name = "installer-core"
+version = "0.1.0"
 
 [[package]]
 name = "itoa"
