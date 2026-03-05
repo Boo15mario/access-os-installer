@@ -1,10 +1,13 @@
 use crate::app::state::SharedState;
 use crate::backend::config_engine::{DesktopEnv, KernelVariant};
-use crate::ui::common::a11y::{apply_button_role, apply_textbox_role, build_mnemonic_label};
+use crate::ui::common::a11y::{
+    append_list_row, apply_button_role, apply_textbox_role, build_list_box, build_mnemonic_label,
+    select_list_box_index, selected_list_box_index, set_accessible_description,
+};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box, Button, CheckButton, ComboBoxText, Entry, Label, PasswordEntry, Stack,
+    Align, Box, Button, CheckButton, Entry, Label, PasswordEntry, Stack,
 };
 use std::rc::Rc;
 
@@ -33,12 +36,11 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     apply_textbox_role(&locale_entry);
     apply_textbox_role(&keymap_entry);
 
-    let kernel_combo = ComboBoxText::new();
-    kernel_combo.set_focusable(true);
+    let kernel_list = build_list_box("Kernel", "Use arrow keys to choose a kernel.");
     for kernel in KernelVariant::all() {
-        kernel_combo.append_text(kernel.label());
+        let row = append_list_row(&kernel_list, kernel.label());
+        set_accessible_description(&row, kernel.description());
     }
-    kernel_combo.set_active(Some(0));
 
     let kernel_desc = Label::builder()
         .label(KernelVariant::Standard.description())
@@ -47,13 +49,25 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
         .build();
     {
         let kernel_desc = kernel_desc.clone();
-        kernel_combo.connect_changed(move |combo| {
-            if let Some(selected) = combo.active() {
-                if let Some(k) = KernelVariant::from_index(selected as usize) {
-                    kernel_desc.set_label(k.description());
-                }
+        kernel_list.connect_row_selected(move |_, row| {
+            let Some(row) = row else {
+                return;
+            };
+            let Some(index) = usize::try_from(row.index()).ok() else {
+                return;
+            };
+            if let Some(k) = KernelVariant::from_index(index) {
+                kernel_desc.set_label(k.description());
             }
         });
+    }
+    let initial_kernel_index = KernelVariant::all()
+        .iter()
+        .position(|kernel| kernel == &state.borrow().kernel)
+        .unwrap_or(0);
+    select_list_box_index(&kernel_list, initial_kernel_index);
+    if let Some(kernel) = KernelVariant::from_index(initial_kernel_index) {
+        kernel_desc.set_label(kernel.description());
     }
 
     let nvidia_check = CheckButton::builder()
@@ -105,7 +119,7 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
         let tz_entry = tz_entry.clone();
         let locale_entry = locale_entry.clone();
         let keymap_entry = keymap_entry.clone();
-        let kernel_combo = kernel_combo.clone();
+        let kernel_list = kernel_list.clone();
         let nvidia_check = nvidia_check.clone();
         let stack = stack.clone();
         next_btn.connect_clicked(move |_| {
@@ -146,7 +160,8 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
                 return;
             }
 
-            let kernel = KernelVariant::from_index(kernel_combo.active().unwrap_or(0) as usize)
+            let kernel = selected_list_box_index(&kernel_list)
+                .and_then(KernelVariant::from_index)
                 .cloned()
                 .unwrap_or(KernelVariant::Standard);
             let server_profile = matches!(state.borrow().desktop_env, Some(DesktopEnv::Server));
@@ -189,11 +204,8 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     let keymap_label = build_mnemonic_label("Key_map", &keymap_entry);
     vbox.append(&keymap_label);
     vbox.append(&keymap_entry);
-    let kernel_label = Label::new(Some("_Kernel"));
-    kernel_label.set_use_underline(true);
-    kernel_label.set_mnemonic_widget(Some(&kernel_combo));
-    vbox.append(&kernel_label);
-    vbox.append(&kernel_combo);
+    vbox.append(&build_mnemonic_label("_Kernel", &kernel_list));
+    vbox.append(&kernel_list);
     vbox.append(&kernel_desc);
     vbox.append(&nvidia_check);
     vbox.append(&nvidia_note);

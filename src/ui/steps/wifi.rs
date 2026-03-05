@@ -1,10 +1,13 @@
 use crate::backend::network;
 use crate::ui::common::a11y::{
-    apply_button_role, apply_textbox_role, set_accessible_description, set_accessible_label,
+    append_list_row, apply_button_role, apply_textbox_role, build_list_box, build_mnemonic_label,
+    clear_list_box, select_list_box_index, selected_list_box_index,
 };
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, ComboBoxText, Label, PasswordEntry, Stack};
+use gtk4::{Align, Box, Button, Label, PasswordEntry, ScrolledWindow, Stack};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub fn build_wifi_step(stack: &Stack) -> Box {
     let vbox = padded_box(12, 24);
@@ -15,18 +18,23 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .margin_bottom(16)
         .build();
 
-    let ssid_combo = ComboBoxText::new();
-    ssid_combo.set_focusable(true);
-    set_accessible_label(&ssid_combo, "Available Networks");
-    set_accessible_description(&ssid_combo, "Use arrow keys to choose a network.");
-    for ssid in network::scan_wifi() {
-        ssid_combo.append_text(&ssid);
-    }
+    let ssid_list = build_list_box("Available Networks", "Use arrow keys to choose a network.");
+    let ssid_scroller = ScrolledWindow::builder()
+        .child(&ssid_list)
+        .hexpand(true)
+        .vexpand(true)
+        .min_content_height(120)
+        .build();
+    ssid_scroller.set_focusable(false);
+
+    let ssid_options = Rc::new(RefCell::new(Vec::<String>::new()));
+
     let pass_entry = PasswordEntry::builder()
         .placeholder_text("Wi-Fi Password")
         .show_peek_icon(true)
         .build();
     apply_textbox_role(&pass_entry);
+
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
 
     let connect_btn = Button::builder().label("Connect").build();
@@ -35,19 +43,59 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
     apply_button_role(&connect_btn);
     apply_button_role(&refresh_btn);
     apply_button_role(&skip_btn);
+    connect_btn.set_sensitive(false);
+
+    let rebuild_networks: Rc<dyn Fn()> = {
+        let ssid_list = ssid_list.clone();
+        let ssid_options = ssid_options.clone();
+        let status_label = status_label.clone();
+        let connect_btn = connect_btn.clone();
+        Rc::new(move || {
+            clear_list_box(&ssid_list);
+            let scanned = network::scan_wifi();
+            *ssid_options.borrow_mut() = scanned.clone();
+
+            if scanned.is_empty() {
+                status_label.set_label("No Wi-Fi networks found. Click Refresh Networks.");
+                connect_btn.set_sensitive(false);
+                let row = append_list_row(&ssid_list, "No networks found");
+                row.set_sensitive(false);
+                return;
+            }
+
+            status_label.set_label("Select a Wi-Fi network.");
+            for (idx, ssid) in scanned.iter().enumerate() {
+                let row = append_list_row(&ssid_list, ssid);
+                if idx == 0 {
+                    row.set_widget_name("a11y-default-focus");
+                }
+            }
+            select_list_box_index(&ssid_list, 0);
+        })
+    };
+    rebuild_networks();
 
     {
-        let ssid_combo = ssid_combo.clone();
+        let connect_btn = connect_btn.clone();
+        ssid_list.connect_row_selected(move |_, row| {
+            connect_btn.set_sensitive(row.is_some());
+        });
+    }
+
+    {
+        let ssid_list = ssid_list.clone();
+        let ssid_options = ssid_options.clone();
         let pass_entry = pass_entry.clone();
         let status_label = status_label.clone();
         let stack = stack.clone();
         connect_btn.connect_clicked(move |_| {
-            let ssid = match ssid_combo.active_text() {
-                Some(value) => value.to_string(),
-                None => {
-                    status_label.set_label("Please select a network.");
-                    return;
-                }
+            let Some(selected) = selected_list_box_index(&ssid_list) else {
+                status_label.set_label("Please select a network.");
+                return;
+            };
+            let Some(ssid) = ssid_options.borrow().get(selected).cloned() else {
+                status_label.set_label("Invalid network selection.");
+                return;
             };
 
             let password = pass_entry.text().to_string();
@@ -67,15 +115,11 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
     }
 
     {
-        let ssid_combo = ssid_combo.clone();
+        let rebuild_networks = rebuild_networks.clone();
         let status_label = status_label.clone();
         refresh_btn.connect_clicked(move |_| {
             status_label.set_label("Scanning...");
-            ssid_combo.remove_all();
-            for ssid in network::scan_wifi() {
-                ssid_combo.append_text(&ssid);
-            }
-            status_label.set_label("Scan complete.");
+            rebuild_networks();
         });
     }
 
@@ -88,15 +132,9 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
 
     vbox.append(&title);
     vbox.append(&subtitle);
-    let networks_label = Label::new(Some("_Available Networks"));
-    networks_label.set_use_underline(true);
-    networks_label.set_mnemonic_widget(Some(&ssid_combo));
-    vbox.append(&networks_label);
-    vbox.append(&ssid_combo);
-    let password_label = Label::new(Some("_Password"));
-    password_label.set_use_underline(true);
-    password_label.set_mnemonic_widget(Some(&pass_entry));
-    vbox.append(&password_label);
+    vbox.append(&build_mnemonic_label("_Available Networks", &ssid_list));
+    vbox.append(&ssid_scroller);
+    vbox.append(&build_mnemonic_label("_Password", &pass_entry));
     vbox.append(&pass_entry);
     vbox.append(&status_label);
     vbox.append(&connect_btn);
@@ -104,3 +142,4 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
     vbox.append(&skip_btn);
     vbox
 }
+

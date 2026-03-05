@@ -6,10 +6,13 @@ use crate::mappers::storage::storage_selection_from_state;
 use crate::services::log::append_log_line;
 use crate::services::mirror::apply_mirror_region;
 use crate::services::mount::prepare_install_targets;
-use crate::ui::common::a11y::apply_button_role;
+use crate::ui::common::a11y::{
+    append_list_row, apply_button_role, build_list_box, build_mnemonic_label,
+    select_list_box_index,
+};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, Label, Stack};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,15 +22,14 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .label("Step 8: Installation Progress")
         .margin_bottom(24)
         .build();
-    let fs_combo = ComboBoxText::new();
-    fs_combo.set_focusable(true);
-    fs_combo.append_text("xfs");
-    fs_combo.append_text("ext4");
-    if state.borrow().fs_type == "ext4" {
-        fs_combo.set_active(Some(1));
-    } else {
-        fs_combo.set_active(Some(0));
-    }
+    let fs_list = build_list_box(
+        "Root Filesystem",
+        "Use arrow keys to choose the root filesystem type.",
+    );
+    append_list_row(&fs_list, "xfs");
+    append_list_row(&fs_list, "ext4");
+    let initial_fs_index = if state.borrow().fs_type == "ext4" { 1 } else { 0 };
+    select_list_box_index(&fs_list, initial_fs_index);
     let swap_hint = Label::builder()
         .label(&format!("Suggested swap size: {} GiB", state.borrow().swap_gb))
         .halign(Align::Start)
@@ -45,18 +47,25 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
     apply_button_role(&start_btn);
     apply_button_role(&retry_pacstrap_btn);
     apply_button_role(&retry_config_btn);
+    start_btn.set_widget_name("a11y-default-focus");
     retry_pacstrap_btn.set_visible(false);
     retry_config_btn.set_visible(false);
     let install_password = Rc::new(RefCell::new(None::<String>));
 
     {
         let state = state.clone();
-        fs_combo.connect_changed(move |combo| {
-            let fs_type = combo
-                .active_text()
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "xfs".to_string());
-            state.borrow_mut().fs_type = fs_type;
+        fs_list.connect_row_selected(move |_, row| {
+            let Some(row) = row else {
+                return;
+            };
+            let Some(index) = usize::try_from(row.index()).ok() else {
+                return;
+            };
+            state.borrow_mut().fs_type = if index == 1 {
+                "ext4".to_string()
+            } else {
+                "xfs".to_string()
+            };
         });
     }
 
@@ -529,11 +538,8 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
     }
 
     vbox.append(&title);
-    let fs_label = Label::new(Some("_Root Filesystem"));
-    fs_label.set_use_underline(true);
-    fs_label.set_mnemonic_widget(Some(&fs_combo));
-    vbox.append(&fs_label);
-    vbox.append(&fs_combo);
+    vbox.append(&build_mnemonic_label("_Root Filesystem", &fs_list));
+    vbox.append(&fs_list);
     vbox.append(&swap_hint);
     vbox.append(&progress_label);
     vbox.append(&log_label);

@@ -1,9 +1,12 @@
 use crate::app::constants::MIRROR_REGIONS;
 use crate::app::state::SharedState;
-use crate::ui::common::a11y::apply_button_role;
+use crate::ui::common::a11y::{
+    append_list_row, apply_button_role, build_list_box, build_mnemonic_label,
+    select_list_box_index, selected_list_box_index,
+};
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, ComboBoxText, Label, Stack};
+use gtk4::{Align, Box, Button, Label, Stack};
 
 pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
     let vbox = padded_box(12, 24);
@@ -12,21 +15,21 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
         .margin_bottom(24)
         .build();
 
-    let region_combo = ComboBoxText::new();
-    region_combo.set_focusable(true);
-    for region in MIRROR_REGIONS {
-        region_combo.append_text(region);
+    let region_list = build_list_box("Mirror Region", "Use arrow keys to choose a region.");
+    for (idx, region) in MIRROR_REGIONS.iter().enumerate() {
+        let row = append_list_row(&region_list, region);
+        if idx == 0 {
+            row.set_widget_name("a11y-default-focus");
+        }
     }
+
     let status_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
 
-    if let Some(index) = MIRROR_REGIONS
+    let initial_index = MIRROR_REGIONS
         .iter()
         .position(|region| *region == state.borrow().mirror_region)
-    {
-        region_combo.set_active(Some(index as u32));
-    } else {
-        region_combo.set_active(Some(0));
-    }
+        .unwrap_or(0);
+    select_list_box_index(&region_list, initial_index);
 
     let next_btn = Button::builder().label("Next: User Settings").build();
     let back_btn = Button::builder().label("Back").build();
@@ -37,15 +40,15 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
         let state = state.clone();
         let stack = stack.clone();
         let status_label = status_label.clone();
-        let region_combo = region_combo.clone();
+        let region_list = region_list.clone();
         next_btn.connect_clicked(move |_| {
-            let Some(selected) = region_combo.active() else {
+            let Some(selected) = selected_list_box_index(&region_list) else {
                 status_label.set_label("Select a mirror region.");
                 return;
             };
 
             let selected_region = MIRROR_REGIONS
-                .get(selected as usize)
+                .get(selected)
                 .copied()
                 .unwrap_or("Worldwide")
                 .to_string();
@@ -61,13 +64,11 @@ pub fn build_mirror_step(stack: &Stack, state: SharedState) -> Box {
     }
 
     vbox.append(&title);
-    let region_label = Label::new(Some("_Mirror Region"));
-    region_label.set_use_underline(true);
-    region_label.set_mnemonic_widget(Some(&region_combo));
-    vbox.append(&region_label);
-    vbox.append(&region_combo);
+    vbox.append(&build_mnemonic_label("_Mirror Region", &region_list));
+    vbox.append(&region_list);
     vbox.append(&status_label);
     vbox.append(&next_btn);
     vbox.append(&back_btn);
     vbox
 }
+
