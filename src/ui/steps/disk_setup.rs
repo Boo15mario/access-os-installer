@@ -8,7 +8,9 @@ use crate::ui::common::a11y::{
 };
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, CheckButton, Entry, Label, ListBox, ScrolledWindow, Stack};
+use gtk4::{
+    AccessibleRole, Align, Box, Button, CheckButton, Entry, Label, ListBox, ScrolledWindow, Stack,
+};
 use std::rc::Rc;
 
 fn build_list_scroller(list: &ListBox, min_height: i32) -> ScrolledWindow {
@@ -34,22 +36,34 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         .wrap(true)
         .build();
 
-    let setup_mode_list = build_list_box("Setup mode", "Use arrow keys to choose an option.");
-    let setup_auto_row = append_list_row(&setup_mode_list, "Automatic");
-    setup_auto_row.set_widget_name("a11y-default-focus");
-    append_list_row(&setup_mode_list, "Manual");
+    // Use radio-style CheckButton groups for the main "mode" selectors. This is more direct to
+    // navigate than lists for two-choice inputs, and behaves well with Orca.
+    let setup_auto_btn = CheckButton::builder().label("Automatic").build();
+    let setup_manual_btn = CheckButton::builder().label("Manual").build();
+    setup_manual_btn.set_group(Some(&setup_auto_btn));
+    setup_auto_btn.set_accessible_role(AccessibleRole::Radio);
+    setup_manual_btn.set_accessible_role(AccessibleRole::Radio);
+    setup_auto_btn.set_widget_name("a11y-default-focus");
 
-    let home_mode_list = build_list_box("Home mode", "Use arrow keys to choose an option.");
-    append_list_row(&home_mode_list, "Home on root filesystem");
-    append_list_row(&home_mode_list, "Separate /home");
+    let home_on_root_btn = CheckButton::builder()
+        .label("Home on root filesystem")
+        .build();
+    let home_separate_btn = CheckButton::builder().label("Separate /home").build();
+    home_separate_btn.set_group(Some(&home_on_root_btn));
+    home_on_root_btn.set_accessible_role(AccessibleRole::Radio);
+    home_separate_btn.set_accessible_role(AccessibleRole::Radio);
 
-    let home_location_list = build_list_box("Home location", "Use arrow keys to choose an option.");
-    append_list_row(&home_location_list, "Same disk");
-    append_list_row(&home_location_list, "Another disk");
+    let home_same_disk_btn = CheckButton::builder().label("Same disk").build();
+    let home_other_disk_btn = CheckButton::builder().label("Another disk").build();
+    home_other_disk_btn.set_group(Some(&home_same_disk_btn));
+    home_same_disk_btn.set_accessible_role(AccessibleRole::Radio);
+    home_other_disk_btn.set_accessible_role(AccessibleRole::Radio);
 
-    let swap_mode_list = build_list_box("Swap mode", "Use arrow keys to choose an option.");
-    append_list_row(&swap_mode_list, "Swap partition");
-    append_list_row(&swap_mode_list, "Swap file");
+    let swap_partition_btn = CheckButton::builder().label("Swap partition").build();
+    let swap_file_btn = CheckButton::builder().label("Swap file").build();
+    swap_file_btn.set_group(Some(&swap_partition_btn));
+    swap_partition_btn.set_accessible_role(AccessibleRole::Radio);
+    swap_file_btn.set_accessible_role(AccessibleRole::Radio);
 
     let swap_file_entry = Entry::builder()
         .placeholder_text("Swap file size in MB")
@@ -128,16 +142,31 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     apply_button_role(&back_btn);
 
     let setup_field = Box::new(gtk4::Orientation::Vertical, 6);
-    setup_field.append(&build_mnemonic_label("_Setup mode", &setup_mode_list));
-    setup_field.append(&setup_mode_list);
+    setup_field.append(&build_mnemonic_label("_Setup mode", &setup_auto_btn));
+    let setup_group = Box::new(gtk4::Orientation::Vertical, 6);
+    setup_group.set_accessible_role(AccessibleRole::RadioGroup);
+    set_accessible_description(&setup_group, "Use arrow keys to choose an option.");
+    setup_group.append(&setup_auto_btn);
+    setup_group.append(&setup_manual_btn);
+    setup_field.append(&setup_group);
 
     let home_mode_field = Box::new(gtk4::Orientation::Vertical, 6);
-    home_mode_field.append(&build_mnemonic_label("_Home mode", &home_mode_list));
-    home_mode_field.append(&home_mode_list);
+    home_mode_field.append(&build_mnemonic_label("_Home mode", &home_on_root_btn));
+    let home_mode_group = Box::new(gtk4::Orientation::Vertical, 6);
+    home_mode_group.set_accessible_role(AccessibleRole::RadioGroup);
+    set_accessible_description(&home_mode_group, "Use arrow keys to choose an option.");
+    home_mode_group.append(&home_on_root_btn);
+    home_mode_group.append(&home_separate_btn);
+    home_mode_field.append(&home_mode_group);
 
     let home_location_field = Box::new(gtk4::Orientation::Vertical, 6);
-    home_location_field.append(&build_mnemonic_label("Home _location", &home_location_list));
-    home_location_field.append(&home_location_list);
+    home_location_field.append(&build_mnemonic_label("Home _location", &home_same_disk_btn));
+    let home_location_group = Box::new(gtk4::Orientation::Vertical, 6);
+    home_location_group.set_accessible_role(AccessibleRole::RadioGroup);
+    set_accessible_description(&home_location_group, "Use arrow keys to choose an option.");
+    home_location_group.append(&home_same_disk_btn);
+    home_location_group.append(&home_other_disk_btn);
+    home_location_field.append(&home_location_group);
 
     let home_disk_field = Box::new(gtk4::Orientation::Vertical, 6);
     home_disk_field.append(&build_mnemonic_label(
@@ -147,8 +176,13 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     home_disk_field.append(&home_disk_scroller);
 
     let swap_mode_field = Box::new(gtk4::Orientation::Vertical, 6);
-    swap_mode_field.append(&build_mnemonic_label("S_wap mode", &swap_mode_list));
-    swap_mode_field.append(&swap_mode_list);
+    swap_mode_field.append(&build_mnemonic_label("S_wap mode", &swap_partition_btn));
+    let swap_mode_group = Box::new(gtk4::Orientation::Vertical, 6);
+    swap_mode_group.set_accessible_role(AccessibleRole::RadioGroup);
+    set_accessible_description(&swap_mode_group, "Use arrow keys to choose an option.");
+    swap_mode_group.append(&swap_partition_btn);
+    swap_mode_group.append(&swap_file_btn);
+    swap_mode_field.append(&swap_mode_group);
 
     let swap_file_field = Box::new(gtk4::Orientation::Vertical, 6);
     swap_file_field.append(&build_mnemonic_label("Swap file size (_MB)", &swap_file_entry));
@@ -171,10 +205,11 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
     manual_swap_field.append(&swap_scroller);
 
     let refresh_visibility: Rc<dyn Fn()> = {
-        let setup_mode_list = setup_mode_list.clone();
-        let home_mode_list = home_mode_list.clone();
-        let home_location_list = home_location_list.clone();
-        let swap_mode_list = swap_mode_list.clone();
+        let setup_manual_btn = setup_manual_btn.clone();
+        let home_separate_btn = home_separate_btn.clone();
+        let home_other_disk_btn = home_other_disk_btn.clone();
+        let swap_file_btn = swap_file_btn.clone();
+        let swap_partition_btn = swap_partition_btn.clone();
         let home_location_field = home_location_field.clone();
         let home_disk_field = home_disk_field.clone();
         let swap_file_field = swap_file_field.clone();
@@ -187,11 +222,11 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         let format_home_check = format_home_check.clone();
         let format_swap_check = format_swap_check.clone();
         Rc::new(move || {
-            let manual = selected_list_box_index(&setup_mode_list) == Some(1);
-            let separate_home = selected_list_box_index(&home_mode_list) == Some(1);
-            let home_other_disk = selected_list_box_index(&home_location_list) == Some(1);
-            let swap_file = selected_list_box_index(&swap_mode_list) == Some(1);
-            let swap_partition = selected_list_box_index(&swap_mode_list) == Some(0);
+            let manual = setup_manual_btn.is_active();
+            let separate_home = home_separate_btn.is_active();
+            let home_other_disk = home_other_disk_btn.is_active();
+            let swap_file = swap_file_btn.is_active();
+            let swap_partition = swap_partition_btn.is_active();
 
             home_location_field.set_visible(separate_home);
             home_disk_field.set_visible(separate_home && home_other_disk);
@@ -209,46 +244,44 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         })
     };
 
-    for list in [
-        setup_mode_list.clone(),
-        home_mode_list.clone(),
-        home_location_list.clone(),
-        swap_mode_list.clone(),
+    for btn in [
+        setup_auto_btn.clone(),
+        setup_manual_btn.clone(),
+        home_on_root_btn.clone(),
+        home_separate_btn.clone(),
+        home_same_disk_btn.clone(),
+        home_other_disk_btn.clone(),
+        swap_partition_btn.clone(),
+        swap_file_btn.clone(),
     ] {
         let refresh_visibility = refresh_visibility.clone();
-        list.connect_row_selected(move |_, _| refresh_visibility());
+        btn.connect_toggled(move |_| refresh_visibility());
     }
 
     {
         let app_state = state.borrow();
-        select_list_box_index(
-            &setup_mode_list,
-            match app_state.setup_mode {
-                SetupMode::Automatic => 0,
-                SetupMode::Manual => 1,
-            },
-        );
-        select_list_box_index(
-            &home_mode_list,
-            match app_state.home_mode {
-                HomeMode::OnRoot => 0,
-                HomeMode::Separate => 1,
-            },
-        );
-        select_list_box_index(
-            &home_location_list,
-            match app_state.home_location {
-                HomeLocation::SameDisk => 0,
-                HomeLocation::OtherDisk => 1,
-            },
-        );
-        select_list_box_index(
-            &swap_mode_list,
-            match app_state.swap_mode {
-                SwapMode::Partition => 0,
-                SwapMode::File => 1,
-            },
-        );
+        // Defaults (ensure each radio group has an active choice).
+        setup_auto_btn.set_active(true);
+        home_on_root_btn.set_active(true);
+        home_same_disk_btn.set_active(true);
+        swap_partition_btn.set_active(true);
+
+        match app_state.setup_mode {
+            SetupMode::Automatic => setup_auto_btn.set_active(true),
+            SetupMode::Manual => setup_manual_btn.set_active(true),
+        }
+        match app_state.home_mode {
+            HomeMode::OnRoot => home_on_root_btn.set_active(true),
+            HomeMode::Separate => home_separate_btn.set_active(true),
+        }
+        match app_state.home_location {
+            HomeLocation::SameDisk => home_same_disk_btn.set_active(true),
+            HomeLocation::OtherDisk => home_other_disk_btn.set_active(true),
+        }
+        match app_state.swap_mode {
+            SwapMode::Partition => swap_partition_btn.set_active(true),
+            SwapMode::File => swap_file_btn.set_active(true),
+        }
         swap_file_entry.set_text(&app_state.swap_file_mb.to_string());
         removable_check.set_active(app_state.removable_media);
         format_efi_check.set_active(app_state.format_efi);
@@ -304,10 +337,10 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
         let state = state.clone();
         let stack = stack.clone();
         let status_label = status_label.clone();
-        let setup_mode_list = setup_mode_list.clone();
-        let home_mode_list = home_mode_list.clone();
-        let home_location_list = home_location_list.clone();
-        let swap_mode_list = swap_mode_list.clone();
+        let setup_manual_btn = setup_manual_btn.clone();
+        let home_separate_btn = home_separate_btn.clone();
+        let home_other_disk_btn = home_other_disk_btn.clone();
+        let swap_file_btn = swap_file_btn.clone();
         let swap_file_entry = swap_file_entry.clone();
         let removable_check = removable_check.clone();
         let home_disk_list = home_disk_list.clone();
@@ -342,23 +375,22 @@ pub fn build_disk_setup_step(stack: &Stack, state: SharedState) -> Box {
 
             {
                 let mut app_state = state.borrow_mut();
-                app_state.setup_mode = if selected_list_box_index(&setup_mode_list) == Some(1) {
+                app_state.setup_mode = if setup_manual_btn.is_active() {
                     SetupMode::Manual
                 } else {
                     SetupMode::Automatic
                 };
-                app_state.home_mode = if selected_list_box_index(&home_mode_list) == Some(1) {
+                app_state.home_mode = if home_separate_btn.is_active() {
                     HomeMode::Separate
                 } else {
                     HomeMode::OnRoot
                 };
-                app_state.home_location =
-                    if selected_list_box_index(&home_location_list) == Some(1) {
+                app_state.home_location = if home_other_disk_btn.is_active() {
                     HomeLocation::OtherDisk
                 } else {
                     HomeLocation::SameDisk
                 };
-                app_state.swap_mode = if selected_list_box_index(&swap_mode_list) == Some(1) {
+                app_state.swap_mode = if swap_file_btn.is_active() {
                     SwapMode::File
                 } else {
                     SwapMode::Partition
