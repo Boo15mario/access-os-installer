@@ -89,7 +89,7 @@ pub fn format_review_summary(state: &AppState) -> String {
         },
     };
     format!(
-        "Target disk: {}\nDisk setup: {}\nHome mode: {}\nSwap: {}\nRoot filesystem: {}\nRemovable media: {}\nMirror region: {}\nKernel: {}\nDesktop environment: {}\nNvidia drivers: {}\nHostname: {}\nUsername: {}\nTimezone: {}\nLocale: {}\nDotfiles: {}",
+        "Target disk: {}\nDisk setup: {}\nHome mode: {}\nSwap: {}\nRoot filesystem: {}\nRemovable media: {}\nMirror region: {}\nKernel: {}\nDesktop environment: {}\nNvidia drivers: {}\nHostname: {}\nUsername: {}\nTimezone: {}\nLocale: {}\nKeymap: {}\nDotfiles: {}",
         target_disk,
         setup_mode_label,
         home_label,
@@ -104,6 +104,7 @@ pub fn format_review_summary(state: &AppState) -> String {
         username,
         state.timezone,
         state.locale,
+        state.keymap,
         DOTFILES_REPO_URL
     )
 }

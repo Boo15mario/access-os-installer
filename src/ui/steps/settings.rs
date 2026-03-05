@@ -26,17 +26,11 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
         .placeholder_text("Password")
         .show_peek_icon(true)
         .build();
-    let tz_entry = Entry::builder().text("America/Chicago").build();
-    let locale_entry = Entry::builder().text("en_US.UTF-8").build();
-    let keymap_entry = Entry::builder().text("us").build();
     apply_textbox_role(&hostname_entry);
     apply_textbox_role(&user_entry);
     apply_textbox_role(&pass_entry);
-    apply_textbox_role(&tz_entry);
-    apply_textbox_role(&locale_entry);
-    apply_textbox_role(&keymap_entry);
 
-    let kernel_list = build_list_box("Kernel", "Use arrow keys to choose a kernel.");
+    let kernel_list = build_list_box("Kernel", "Select a kernel variant.");
     for kernel in KernelVariant::all() {
         let row = append_list_row(&kernel_list, kernel.label());
         set_accessible_description(&row, kernel.description());
@@ -116,9 +110,6 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
         let hostname_entry = hostname_entry.clone();
         let user_entry = user_entry.clone();
         let pass_entry = pass_entry.clone();
-        let tz_entry = tz_entry.clone();
-        let locale_entry = locale_entry.clone();
-        let keymap_entry = keymap_entry.clone();
         let kernel_list = kernel_list.clone();
         let nvidia_check = nvidia_check.clone();
         let stack = stack.clone();
@@ -142,24 +133,6 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
             }
             pass_entry.set_text("");
 
-            let timezone = tz_entry.text().trim().to_string();
-            if timezone.is_empty() {
-                status_label.set_label("Enter a timezone.");
-                return;
-            }
-
-            let locale = locale_entry.text().trim().to_string();
-            if locale.is_empty() {
-                status_label.set_label("Enter a locale.");
-                return;
-            }
-
-            let keymap = keymap_entry.text().trim().to_string();
-            if keymap.is_empty() {
-                status_label.set_label("Enter a keymap.");
-                return;
-            }
-
             let kernel = selected_list_box_index(&kernel_list)
                 .and_then(KernelVariant::from_index)
                 .cloned()
@@ -170,9 +143,6 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
             s.hostname = hostname;
             s.username = username;
             s.password = password;
-            s.timezone = timezone;
-            s.locale = locale;
-            s.keymap = keymap;
             s.kernel = kernel;
             s.nvidia = !server_profile && nvidia_check.is_active();
             status_label.set_label("");
@@ -195,15 +165,6 @@ pub fn build_settings_step(stack: &Stack, state: SharedState) -> Box {
     let password_label = build_mnemonic_label("_Password", &pass_entry);
     vbox.append(&password_label);
     vbox.append(&pass_entry);
-    let timezone_label = build_mnemonic_label("_Timezone", &tz_entry);
-    vbox.append(&timezone_label);
-    vbox.append(&tz_entry);
-    let locale_label = build_mnemonic_label("_Locale", &locale_entry);
-    vbox.append(&locale_label);
-    vbox.append(&locale_entry);
-    let keymap_label = build_mnemonic_label("Key_map", &keymap_entry);
-    vbox.append(&keymap_label);
-    vbox.append(&keymap_entry);
     vbox.append(&build_mnemonic_label("_Kernel", &kernel_list));
     vbox.append(&kernel_list);
     vbox.append(&kernel_desc);

@@ -55,7 +55,7 @@ fn build_ui(app: &Application) {
     stack.add_titled(&step_de, Some("desktop_env"), "Desktop Environment");
 
     let step_mirror = steps::build_mirror_step(&stack, state.clone());
-    stack.add_titled(&step_mirror, Some("mirror"), "Mirror Region");
+    stack.add_titled(&step_mirror, Some("mirror"), "Regional Settings");
 
     let step_settings = steps::build_settings_step(&stack, state.clone());
     stack.add_titled(&step_settings, Some("settings"), "User Settings");

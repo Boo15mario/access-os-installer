@@ -18,7 +18,7 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
         .margin_bottom(16)
         .build();
 
-    let ssid_list = build_list_box("Available Networks", "Use arrow keys to choose a network.");
+    let ssid_list = build_list_box("Available Networks", "Select a network to connect.");
     let ssid_scroller = ScrolledWindow::builder()
         .child(&ssid_list)
         .hexpand(true)
@@ -142,4 +142,3 @@ pub fn build_wifi_step(stack: &Stack) -> Box {
     vbox.append(&skip_btn);
     vbox
 }
-

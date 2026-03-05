@@ -17,7 +17,7 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
 
     let de_list = build_list_box(
         "Desktop Environment",
-        "Use arrow keys to choose a desktop environment.",
+        "Select a desktop environment.",
     );
     for (idx, de) in DesktopEnv::all().iter().enumerate() {
         let row = append_list_row(&de_list, de.label());
@@ -34,7 +34,7 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
         .margin_top(8)
         .build();
 
-    let next_btn = Button::builder().label("Next: Mirror Region").build();
+    let next_btn = Button::builder().label("Next: Regional Settings").build();
     let back_btn = Button::builder().label("Back").build();
     apply_button_role(&next_btn);
     apply_button_role(&back_btn);
@@ -113,4 +113,3 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
     vbox.append(&back_btn);
     vbox
 }
-

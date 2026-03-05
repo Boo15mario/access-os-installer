@@ -23,7 +23,7 @@ pub fn build_disk_step(stack: &Stack, state: SharedState) -> Box {
     set_accessible_label(&drive_list, "Target Internal Drive");
     set_accessible_description(
         &drive_list,
-        "Use arrow keys to choose the internal drive that will be erased and used for installation.",
+        "Choose the internal drive that will be erased and used for installation.",
     );
     let drive_scroller = ScrolledWindow::builder()
         .child(&drive_list)

@@ -24,7 +24,7 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .build();
     let fs_list = build_list_box(
         "Root Filesystem",
-        "Use arrow keys to choose the root filesystem type.",
+        "Select the root filesystem type.",
     );
     append_list_row(&fs_list, "xfs");
     append_list_row(&fs_list, "ext4");
