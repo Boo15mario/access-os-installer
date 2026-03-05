@@ -144,7 +144,8 @@ fn validate_common(selection: &StorageSelection) -> Result<(), String> {
         }
     }
 
-    if selection.home_mode == HomeMode::Separate
+    if selection.setup_mode == SetupMode::Automatic
+        && selection.home_mode == HomeMode::Separate
         && selection.home_location == HomeLocation::OtherDisk
     {
         let home_disk = selection
