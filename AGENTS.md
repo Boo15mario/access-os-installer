@@ -1,13 +1,11 @@
 # Repository Guidelines
 
-## Project Structure
+## Project Structure & Module Organization
 
-- `src/`: Rust sources (GTK4 app).
-- `src/app/`: application bootstrap + shared state.
-- `src/ui/steps/`: wizard-style screens (Welcome, Wi-Fi, Disk, Install, etc.).
-- `src/ui/common/`: shared UI helpers (layout + accessibility helpers in `a11y.rs`).
-- `src/backend/`: system probing + install logic (disk/network/preflight/storage planning).
-- `src/services/` and `src/mappers/`: supporting utilities and data mapping.
+- `Cargo.toml`: workspace root (Rust 2021).
+- `crates/installer-core/`: shared backend library (disk/network/preflight/storage planning + services).
+- `cli/`: line-based CLI wizard intended to work well with screen readers (no curses/TUI).
+- `gtk/`: GTK4 installer app (wizard UI + accessibility helpers). `access-os-installer.desktop` targets this binary.
 - `assets/`: runtime assets (e.g. `assets/login.wav`, `assets/access-os-installer.svg`).
 - `docs/plans/`: design docs and implementation plans for major changes.
 
@@ -16,28 +14,31 @@
 Run these from the repo root:
 
 ```bash
-cargo build          # compile debug binary
-cargo test           # run unit tests
-cargo run            # run the GTK installer locally (requires a display session)
-cargo fmt            # format (rustfmt)
-cargo clippy         # lint (Clippy)
-cargo build --release
+cargo build --workspace                     # compile all workspace crates
+cargo test --workspace                      # run unit tests
+cargo run -p access-os-installer-cli -- --dry-run
+cargo run -p access-os-installer            # GTK; requires a display session
+cargo fmt --all                             # format (rustfmt)
+cargo clippy --workspace --all-targets      # lint (Clippy)
+cargo build -p access-os-installer --release
 ```
 
 Notes:
 - This is a GUI app; headless shells will fail with "Failed to open display".
+- Prefer `--dry-run` while iterating; it prints the computed plan without touching disks or installing packages.
 - For screen reader debugging, ensure AT-SPI is active (the app sets `GTK_A11Y=atspi` when unset).
 
 ## Coding Style & Naming
 
-- Rust 2021 edition (`Cargo.toml`).
-- Indentation: 4 spaces; keep functions small and step builders readable.
+- `cargo fmt` is the baseline; keep diffs clean and mechanical formatting out of review.
+- Indentation: 4 spaces; keep functions small and step builders readable/testable.
 - Naming: `snake_case` (fns/modules), `CamelCase` (types), `SCREAMING_SNAKE_CASE` (constants).
-- Prefer using `src/ui/common/a11y.rs` helpers instead of ad-hoc accessible labels/roles.
+- Put install logic in `crates/installer-core/` and call it from `cli/` and `gtk/` (avoid duplicating behavior).
+- GTK: prefer `gtk/src/ui/common/a11y.rs` helpers over ad-hoc accessible labels/roles.
 
 ## Testing Guidelines
 
-- Unit tests live alongside code under `#[cfg(test)]` (e.g. in `src/backend/*`).
+- Unit tests live alongside code under `#[cfg(test)]` (mostly in `crates/installer-core/src/...`).
 - Run `cargo test` before pushing.
 - UI changes require a quick manual pass: keyboard-only navigation and Orca announcements across step transitions.
 
@@ -50,4 +51,4 @@ Notes:
 
 ## Safety (Installer)
 
-Parts of `src/backend/` perform destructive disk actions. Do not test the install path on your primary machine; use a VM or a spare disk and double-check the selected `/dev/...` target.
+Parts of `crates/installer-core/` perform destructive disk actions. Do not test the install path on your primary machine; use a VM or a spare disk and double-check the selected `/dev/...` target.
