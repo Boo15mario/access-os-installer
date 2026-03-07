@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use super::config_engine::{self, DesktopEnv, KernelVariant};
+use super::emit_progress;
 
 const GNOME_EXTENSIONS: &[(&str, &str)] = &[
     ("no-overview@fthx", "https://github.com/fthx/no-overview"),
@@ -75,7 +76,11 @@ fn get_root_uuid(root_partition: &str) -> Result<String, String> {
     Ok(uuid)
 }
 
-pub fn run_pacstrap(config: &InstallConfig) -> Result<(), String> {
+pub fn run_pacstrap(
+    config: &InstallConfig,
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
+    emit_progress(progress, "Installing packages with pacstrap");
     let packages =
         config_engine::full_package_list(&config.desktop_env, &config.kernel, config.nvidia)?;
     let mut args: Vec<&str> = vec!["-K", "/mnt"];
@@ -83,7 +88,8 @@ pub fn run_pacstrap(config: &InstallConfig) -> Result<(), String> {
     run_command("pacstrap", &args, "pacstrap failed")
 }
 
-pub fn generate_fstab() -> Result<(), String> {
+pub fn generate_fstab(progress: Option<&super::ProgressCallback>) -> Result<(), String> {
+    emit_progress(progress, "Generating fstab");
     let output = Command::new("genfstab")
         .args(&["-U", "/mnt"])
         .output()
@@ -100,8 +106,13 @@ pub fn generate_fstab() -> Result<(), String> {
         .map_err(|e| format!("Failed to write /mnt/etc/fstab: {}", e))
 }
 
-pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<(), String> {
+pub fn configure_system(
+    config: &InstallConfig,
+    root_partition: &str,
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
     // 1. Timezone
+    emit_progress(progress, "Setting timezone");
     let tz_path = format!("/usr/share/zoneinfo/{}", config.timezone);
     run_chroot(
         &["ln", "-sf", &tz_path, "/etc/localtime"],
@@ -113,6 +124,7 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
     )?;
 
     // 2. Locale
+    emit_progress(progress, "Generating locales");
     let sed_pattern = format!("s/^#\\({}\\)/\\1/", config.locale);
     run_chroot(
         &["sed", "-i", &sed_pattern, "/etc/locale.gen"],
@@ -125,11 +137,13 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
         .map_err(|e| format!("Failed to write locale.conf: {}", e))?;
 
     // 3. Keymap
+    emit_progress(progress, "Writing console keymap");
     let vconsole = format!("KEYMAP={}", config.keymap);
     std::fs::write("/mnt/etc/vconsole.conf", format!("{}\n", vconsole))
         .map_err(|e| format!("Failed to write vconsole.conf: {}", e))?;
 
     // 4. Hostname
+    emit_progress(progress, "Writing hostname and hosts file");
     std::fs::write("/mnt/etc/hostname", format!("{}\n", config.hostname))
         .map_err(|e| format!("Failed to write hostname: {}", e))?;
 
@@ -142,6 +156,7 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
         .map_err(|e| format!("Failed to write /etc/hosts: {}", e))?;
 
     // 6. Bootloader (systemd-boot)
+    emit_progress(progress, "Installing bootloader");
     if config.removable_media {
         run_chroot(
             &["bootctl", "install", "--no-variables"],
@@ -172,6 +187,7 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
         .map_err(|e| format!("Failed to write boot entry: {}", e))?;
 
     // 7. Create user
+    emit_progress(progress, "Creating user account");
     run_chroot(
         &["useradd", "-m", "-G", "audio,video,storage,power,wheel", "-s", "/bin/bash", &config.username],
         "Failed to create user",
@@ -204,6 +220,7 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
     }
 
     // 7. Sudoers — uncomment %wheel ALL=(ALL:ALL) ALL
+    emit_progress(progress, "Configuring sudo access");
     run_chroot(
         &[
             "sed",
@@ -215,6 +232,7 @@ pub fn configure_system(config: &InstallConfig, root_partition: &str) -> Result<
     )?;
 
     // 9. Enable services
+    emit_progress(progress, "Enabling system services");
     let mut services = vec![
         "NetworkManager",
         "bluetooth",
@@ -354,11 +372,15 @@ accent-color='orange'\n\
     Ok(())
 }
 
-pub fn stage_system_config_repo(url: &str) -> Result<(), String> {
+pub fn stage_system_config_repo(
+    url: &str,
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
     if url.is_empty() {
         return Ok(());
     }
 
+    emit_progress(progress, "Staging system configuration repository");
     if Path::new(STAGED_CONFIG_REPO_PATH).exists() {
         fs::remove_dir_all(STAGED_CONFIG_REPO_PATH).map_err(|e| {
             format!(
@@ -375,7 +397,9 @@ pub fn stage_system_config_repo(url: &str) -> Result<(), String> {
     )
 }
 
-pub fn overlay_staged_config_to_target() -> Result<(), String> {
+pub fn overlay_staged_config_to_target(
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
     let repo = Path::new(STAGED_CONFIG_REPO_PATH);
     if !repo.exists() {
         return Err(format!(
@@ -394,6 +418,7 @@ pub fn overlay_staged_config_to_target() -> Result<(), String> {
             continue;
         }
 
+        emit_progress(progress, &format!("Copying staged config {}", name_str));
         let src = entry.path();
         let dest = Path::new("/mnt").join(&name);
         let output = Command::new("cp")

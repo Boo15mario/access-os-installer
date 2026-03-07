@@ -1,8 +1,11 @@
 use crate::backend::storage_plan::ResolvedInstallLayout;
 use std::process::Command;
 
-pub fn prepare_install_targets(layout: &ResolvedInstallLayout) -> Result<(), String> {
-    crate::backend::disk_manager::execute_layout(layout)
+pub fn prepare_install_targets(
+    layout: &ResolvedInstallLayout,
+    progress: Option<&crate::backend::ProgressCallback>,
+) -> Result<(), String> {
+    crate::backend::disk_manager::execute_layout(layout, progress)
 }
 
 pub fn unmount_install_targets() -> Result<(), String> {

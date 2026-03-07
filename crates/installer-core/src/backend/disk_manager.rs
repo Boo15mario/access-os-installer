@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::process::Command;
 
+use super::emit_progress;
 use super::storage_plan::{
     AutoPartitionPlan, FilesystemType, ManualCreatePartition, ResolvedInstallLayout, SwapAction,
 };
@@ -449,24 +450,38 @@ fn ensure_mount_target(target: &str) -> Result<(), String> {
     )
 }
 
-pub fn execute_layout(layout: &ResolvedInstallLayout) -> Result<(), String> {
+pub fn execute_layout(
+    layout: &ResolvedInstallLayout,
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
+    emit_progress(progress, "Clearing previous mounts and swap state");
     run_optional_command("swapoff", &["/mnt/swapfile"], "Swapoff /mnt/swapfile");
     run_optional_command("umount", &["/mnt/home"], "Unmount /mnt/home");
     run_optional_command("umount", &["/mnt/boot"], "Unmount /mnt/boot");
     run_optional_command("umount", &["/mnt"], "Unmount /mnt");
 
     for plan in &layout.auto_partition {
+        emit_progress(progress, &format!("Partitioning disk {}", plan.disk));
         apply_auto_partition(plan)?;
     }
 
     for partition in &layout.partitions_to_delete {
+        emit_progress(progress, &format!("Deleting partition {}", partition));
         delete_partition(partition, &layout.managed_disks)?;
     }
     for action in &layout.manual_create_actions {
+        emit_progress(
+            progress,
+            &format!("Creating {} partition on {}", action.role.label(), action.disk),
+        );
         create_manual_partition(action)?;
     }
 
     for action in &layout.format_actions {
+        emit_progress(
+            progress,
+            &format!("Formatting {} as {}", action.device, action.fs.label()),
+        );
         format_partition(&action.device, &action.fs)?;
     }
 
@@ -476,6 +491,7 @@ pub fn execute_layout(layout: &ResolvedInstallLayout) -> Result<(), String> {
             .iter()
             .any(|action| action.device == *device && action.fs == FilesystemType::Swap);
         if !already_activated {
+            emit_progress(progress, &format!("Activating swap on {}", device));
             run_command(
                 "swapon",
                 &[device],
@@ -487,6 +503,7 @@ pub fn execute_layout(layout: &ResolvedInstallLayout) -> Result<(), String> {
     let mut mounts = layout.mount_actions.clone();
     mounts.sort_by_key(|mount| mount.target.len());
     for mount in mounts {
+        emit_progress(progress, &format!("Mounting {} at {}", mount.device, mount.target));
         ensure_mount_target(&mount.target)?;
         run_command(
             "mount",
@@ -498,25 +515,32 @@ pub fn execute_layout(layout: &ResolvedInstallLayout) -> Result<(), String> {
     Ok(())
 }
 
-pub fn setup_swap_file(layout: &ResolvedInstallLayout) -> Result<(), String> {
+pub fn setup_swap_file(
+    layout: &ResolvedInstallLayout,
+    progress: Option<&super::ProgressCallback>,
+) -> Result<(), String> {
     let Some(SwapAction::File { path, size_mb }) = &layout.swap_action else {
         return Ok(());
     };
 
+    emit_progress(progress, &format!("Preparing swap file {}", path));
     run_optional_command("swapoff", &[path], &format!("Swapoff {}", path));
     run_optional_command("rm", &["-f", path], &format!("Remove old {}", path));
 
     let length = format!("{}M", size_mb);
+    emit_progress(progress, &format!("Allocating {} MB swap file", size_mb));
     run_command(
         "fallocate",
         &["-l", &length, path],
         &format!("Failed to allocate swap file {}", path),
     )?;
+    emit_progress(progress, &format!("Setting permissions on {}", path));
     run_command(
         "chmod",
         &["600", path],
         &format!("Failed to chmod swap file {}", path),
     )?;
+    emit_progress(progress, &format!("Activating swap file {}", path));
     run_command("mkswap", &[path], &format!("Failed to initialize {}", path))?;
     run_command("swapon", &[path], &format!("Failed to activate {}", path))
 }

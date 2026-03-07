@@ -5,6 +5,14 @@ pub mod network;
 pub mod preflight;
 pub mod storage_plan;
 
+pub type ProgressCallback = dyn Fn(&str);
+
+pub fn emit_progress(progress: Option<&ProgressCallback>, message: &str) {
+    if let Some(callback) = progress {
+        callback(message);
+    }
+}
+
 use sysinfo::System;
 
 pub fn get_suggested_swap_gb() -> u64 {

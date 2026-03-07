@@ -590,15 +590,17 @@ impl Wizard {
 
         println!();
         println!("Installing...");
+        let progress = |message: &str| println!("  {}", message);
 
         println!("1/7 Partitioning and mounting...");
-        mount::prepare_install_targets(&layout)?;
+        mount::prepare_install_targets(&layout, Some(&progress))?;
 
         println!("2/7 Staging system config...");
         installer_core::backend::install_worker::stage_system_config_repo(
             installer_core::constants::DOTFILES_REPO_URL,
+            Some(&progress),
         )?;
-        installer_core::backend::install_worker::overlay_staged_config_to_target()?;
+        installer_core::backend::install_worker::overlay_staged_config_to_target(Some(&progress))?;
 
         println!("3/7 Applying mirror region ({})...", self.state.mirror_region);
         if let Err(err) = mirror::apply_mirror_region(&self.state.mirror_region) {
@@ -618,16 +620,20 @@ impl Wizard {
             nvidia: self.state.nvidia,
             removable_media: self.state.removable_media,
         };
-        installer_core::backend::install_worker::run_pacstrap(&config)?;
+        installer_core::backend::install_worker::run_pacstrap(&config, Some(&progress))?;
 
         println!("5/7 Setting up swap (if configured)...");
-        installer_core::backend::disk_manager::setup_swap_file(&layout)?;
+        installer_core::backend::disk_manager::setup_swap_file(&layout, Some(&progress))?;
 
         println!("6/7 Generating fstab...");
-        installer_core::backend::install_worker::generate_fstab()?;
+        installer_core::backend::install_worker::generate_fstab(Some(&progress))?;
 
         println!("7/7 Configuring system...");
-        installer_core::backend::install_worker::configure_system(&config, &root_partition)?;
+        installer_core::backend::install_worker::configure_system(
+            &config,
+            &root_partition,
+            Some(&progress),
+        )?;
 
         // Best-effort: clear password in memory after install.
         self.state.password.clear();
