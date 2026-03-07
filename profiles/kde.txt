@@ -1,3 +1,0 @@
-plasma-meta
-kde-applications-meta
-sddm

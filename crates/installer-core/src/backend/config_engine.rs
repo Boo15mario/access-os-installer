@@ -5,25 +5,18 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug, PartialEq)]
 pub enum DesktopEnv {
     Gnome,
-    Kde,
     Server,
     Niri,
 }
 
 impl DesktopEnv {
     pub fn all() -> &'static [DesktopEnv] {
-        &[
-            DesktopEnv::Gnome,
-            DesktopEnv::Kde,
-            DesktopEnv::Server,
-            DesktopEnv::Niri,
-        ]
+        &[DesktopEnv::Gnome, DesktopEnv::Server, DesktopEnv::Niri]
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             DesktopEnv::Gnome => "GNOME (Custom)",
-            DesktopEnv::Kde => "KDE Plasma",
             DesktopEnv::Server => "Server (Headless)",
             DesktopEnv::Niri => "Niri (Coming Soon)",
         }
@@ -32,7 +25,6 @@ impl DesktopEnv {
     pub fn description(&self) -> &'static str {
         match self {
             DesktopEnv::Gnome => "GNOME with Access OS custom configuration",
-            DesktopEnv::Kde => "KDE Plasma with default settings",
             DesktopEnv::Server => {
                 "Headless server profile with Docker, Docker Compose, Tailscale, and SSH"
             }
@@ -43,7 +35,6 @@ impl DesktopEnv {
     pub fn profile_filename(&self) -> &'static str {
         match self {
             DesktopEnv::Gnome => "gnome.txt",
-            DesktopEnv::Kde => "kde.txt",
             DesktopEnv::Server => "server.txt",
             DesktopEnv::Niri => "niri.txt",
         }
@@ -59,14 +50,13 @@ impl DesktopEnv {
     pub fn display_manager(&self) -> Option<&'static str> {
         match self {
             DesktopEnv::Gnome | DesktopEnv::Niri => Some("gdm"),
-            DesktopEnv::Kde => Some("sddm"),
             DesktopEnv::Server => None,
         }
     }
 
     pub fn is_available(&self) -> bool {
         match self {
-            DesktopEnv::Gnome | DesktopEnv::Kde | DesktopEnv::Server => true,
+            DesktopEnv::Gnome | DesktopEnv::Server => true,
             DesktopEnv::Niri => false,
         }
     }
@@ -269,8 +259,8 @@ mod tests {
 
     #[test]
     fn desktop_profile_packages_load_from_text_file() {
-        let packages = desktop_profile_packages(&DesktopEnv::Kde).unwrap();
-        assert_eq!(packages, vec!["plasma-meta", "kde-applications-meta", "sddm"]);
+        let packages = desktop_profile_packages(&DesktopEnv::Server).unwrap();
+        assert_eq!(packages, vec!["docker", "docker-compose", "tailscale", "openssh"]);
     }
 
     #[test]
