@@ -18,12 +18,15 @@ pub struct Wizard {
     state: State,
     cached_layout: Option<ResolvedInstallLayout>,
     cached_disk_gib: Option<u64>,
+    network_status: NetworkStatus,
+    cleared_screen: bool,
     done: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Step {
     Welcome,
+    WiFiSetup,
     InstallOptions,
     DiskSelection,
     DiskSetup,
@@ -32,6 +35,13 @@ enum Step {
     Review,
     Install,
     Complete,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NetworkStatus {
+    Checking,
+    Connected,
+    NotConnected,
 }
 
 struct State {
@@ -95,6 +105,8 @@ impl Wizard {
             },
             cached_layout: None,
             cached_disk_gib: None,
+            network_status: NetworkStatus::Checking,
+            cleared_screen: false,
             done: false,
         }
     }
@@ -103,6 +115,7 @@ impl Wizard {
         while !self.done {
             match self.step {
                 Step::Welcome => self.step_welcome()?,
+                Step::WiFiSetup => self.step_wifi_setup()?,
                 Step::InstallOptions => self.step_install_options()?,
                 Step::DiskSelection => self.step_disk_selection()?,
                 Step::DiskSetup => self.step_disk_setup()?,
@@ -117,10 +130,13 @@ impl Wizard {
     }
 
     fn step_welcome(&mut self) -> Result<(), String> {
+        self.clear_screen_once()?;
+        self.refresh_network_status();
+
         println!();
         println!("Access OS Installer (CLI)");
         println!("Type `next` to begin, or `quit` to exit.");
-        println!("If you need Wi-Fi, type `wifi`.");
+        println!("Network: {}", self.network_status_label());
         println!("Commands always available: next, back, help, quit");
         println!();
 
@@ -128,12 +144,9 @@ impl Wizard {
             let input = prompt("> ")?;
             match input.as_str() {
                 "help" => {
-                    println!("This is a line-based installer. Type `next` to move forward, `back` to return to the previous screen.");
-                }
-                "wifi" => {
-                    if let Err(err) = wifi_flow() {
-                        println!("ERROR: {}", err);
-                    }
+                    println!(
+                        "This is a line-based installer. Type `next` to move forward. If internet is unavailable, `next` opens Wi-Fi setup."
+                    );
                 }
                 "quit" | "exit" => {
                     self.done = true;
@@ -147,16 +160,60 @@ impl Wizard {
                         println!("ERROR: You must run this installer as root.");
                         continue;
                     }
-                    if !network::check_connectivity() {
-                        println!("ERROR: No internet connectivity detected.");
-                        continue;
+                    self.refresh_network_status();
+                    if self.network_status == NetworkStatus::Connected {
+                        self.step = Step::InstallOptions;
+                    } else {
+                        self.step = Step::WiFiSetup;
                     }
-                    self.step = Step::InstallOptions;
                     return Ok(());
                 }
                 other => {
                     println!("Unknown command: {}", other);
                 }
+            }
+        }
+    }
+
+    fn step_wifi_setup(&mut self) -> Result<(), String> {
+        loop {
+            self.refresh_network_status();
+            println!();
+            println!("Wi-Fi Setup");
+            println!("Network: {}", self.network_status_label());
+            println!("1) Scan and connect to Wi-Fi");
+            println!("2) Re-check internet status");
+            println!();
+            println!("Type a number to act, or `next` / `back`.");
+
+            match prompt("> ")?.as_str() {
+                "help" => {
+                    println!("Connect to Wi-Fi here. Once internet is connected, type `next` to continue to install options.");
+                }
+                "quit" | "exit" => {
+                    self.done = true;
+                    return Ok(());
+                }
+                "back" => {
+                    self.step = Step::Welcome;
+                    return Ok(());
+                }
+                "next" => {
+                    self.refresh_network_status();
+                    if self.network_status != NetworkStatus::Connected {
+                        println!("ERROR: Internet is still not connected.");
+                        continue;
+                    }
+                    self.step = Step::InstallOptions;
+                    return Ok(());
+                }
+                "1" => {
+                    if let Err(err) = self.wifi_connect_flow() {
+                        println!("ERROR: {}", err);
+                    }
+                }
+                "2" => self.refresh_network_status(),
+                other => println!("Unknown input: {}", other),
             }
         }
     }
@@ -1458,6 +1515,68 @@ impl Wizard {
         }
     }
 
+    fn clear_screen_once(&mut self) -> Result<(), String> {
+        if self.cleared_screen {
+            return Ok(());
+        }
+        print!("\x1B[2J\x1B[H");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        self.cleared_screen = true;
+        Ok(())
+    }
+
+    fn refresh_network_status(&mut self) {
+        self.network_status = NetworkStatus::Checking;
+        self.network_status = if network::check_connectivity() {
+            NetworkStatus::Connected
+        } else {
+            NetworkStatus::NotConnected
+        };
+    }
+
+    fn network_status_label(&self) -> &'static str {
+        match self.network_status {
+            NetworkStatus::Checking => "checking...",
+            NetworkStatus::Connected => "connected",
+            NetworkStatus::NotConnected => "not connected",
+        }
+    }
+
+    fn wifi_connect_flow(&mut self) -> Result<(), String> {
+        println!("Scanning...");
+        let ssids = network::scan_wifi();
+        if ssids.is_empty() {
+            return Err("No Wi-Fi networks found.".to_string());
+        }
+
+        for (idx, ssid) in ssids.iter().enumerate() {
+            println!("{}) {}", idx + 1, ssid);
+        }
+        println!("Type a number to connect, or `back` to cancel.");
+
+        let selected = loop {
+            let input = prompt("> ")?;
+            match input.as_str() {
+                "back" => return Ok(()),
+                other => {
+                    let choice = other.parse::<usize>().ok().unwrap_or(0);
+                    if choice == 0 || choice > ssids.len() {
+                        println!("Invalid selection.");
+                        continue;
+                    }
+                    break ssids[choice - 1].clone();
+                }
+            }
+        };
+
+        println!("Connecting to: {}", selected);
+        let password = prompt_password("Wi-Fi password (leave blank for open): ")?;
+        network::connect_wifi(&selected, &password)?;
+        self.refresh_network_status();
+        println!("Connected.");
+        Ok(())
+    }
+
     fn pick_from_list(
         &mut self,
         title: &str,
@@ -1598,40 +1717,4 @@ impl Drop for SttyEchoGuard {
         }
         let _ = Command::new("stty").arg("echo").status();
     }
-}
-
-fn wifi_flow() -> Result<(), String> {
-    println!();
-    println!("Wi-Fi");
-    println!("Scanning...");
-    let ssids = network::scan_wifi();
-    if ssids.is_empty() {
-        return Err("No Wi-Fi networks found.".to_string());
-    }
-
-    for (idx, ssid) in ssids.iter().enumerate() {
-        println!("{}) {}", idx + 1, ssid);
-    }
-    println!("Type a number to connect, or `back` to cancel.");
-
-    let selected = loop {
-        let input = prompt("> ")?;
-        match input.as_str() {
-            "back" => return Ok(()),
-            other => {
-                let choice = other.parse::<usize>().ok().unwrap_or(0);
-                if choice == 0 || choice > ssids.len() {
-                    println!("Invalid selection.");
-                    continue;
-                }
-                break ssids[choice - 1].clone();
-            }
-        }
-    };
-
-    println!("Connecting to: {}", selected);
-    let password = prompt_password("Wi-Fi password (leave blank for open): ")?;
-    network::connect_wifi(&selected, &password)?;
-    println!("Connected.");
-    Ok(())
 }
