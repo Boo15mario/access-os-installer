@@ -1,3 +1,7 @@
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DesktopEnv {
     Gnome,
@@ -36,12 +40,12 @@ impl DesktopEnv {
         }
     }
 
-    pub fn packages(&self) -> &'static [&'static str] {
+    pub fn profile_filename(&self) -> &'static str {
         match self {
-            DesktopEnv::Gnome => &["gnome", "gnome-tweaks", "gdm", "breeze-gtk"],
-            DesktopEnv::Kde => &["plasma-meta", "kde-applications-meta", "sddm"],
-            DesktopEnv::Server => &["docker", "docker-compose", "tailscale", "openssh"],
-            DesktopEnv::Niri => &["niri", "gdm"],
+            DesktopEnv::Gnome => "gnome.txt",
+            DesktopEnv::Kde => "kde.txt",
+            DesktopEnv::Server => "server.txt",
+            DesktopEnv::Niri => "niri.txt",
         }
     }
 
@@ -108,12 +112,12 @@ impl KernelVariant {
         }
     }
 
-    pub fn packages(&self) -> &'static [&'static str] {
+    pub fn profile_filename(&self) -> &'static str {
         match self {
-            KernelVariant::Standard => &["linux", "linux-headers"],
-            KernelVariant::Lts => &["linux-lts", "linux-lts-headers"],
-            KernelVariant::Zen => &["linux-zen", "linux-zen-headers"],
-            KernelVariant::Hardened => &["linux-hardened", "linux-hardened-headers"],
+            KernelVariant::Standard => "kernel-standard.txt",
+            KernelVariant::Lts => "kernel-lts.txt",
+            KernelVariant::Zen => "kernel-zen.txt",
+            KernelVariant::Hardened => "kernel-hardened.txt",
         }
     }
 
@@ -140,86 +144,145 @@ impl KernelVariant {
     }
 }
 
-pub fn base_packages(kernel: &KernelVariant) -> Vec<&'static str> {
-    let mut packages = vec![
-        // Old installer minimal package list, filtered to official Arch repos.
-        "base",
-        "dialog",
-        "alsa-card-profiles",
-        "alsa-firmware",
-        "alsa-utils",
-        "amd-ucode",
-        "archlinux-keyring",
-        "aspell",
-        "aspell-en",
-        "base-devel",
-        "broadcom-wl-dkms",
-        "cifs-utils",
-        "cronie",
-        "dnsmasq",
-        "dosfstools",
-        "edk2-ovmf",
-        "efibootmgr",
-        "espeak-ng",
-        "espeakup",
-        "grub",
-        "icu",
-        "intel-ucode",
-        "iptables-nft",
-        "linux-firmware",
-        "linux-firmware-marvell",
-        "lvm2",
-        "man-db",
-        "man-pages",
-        "mkinitcpio",
-        "mtools",
-        "net-tools",
-        "nano",
-        "networkmanager",
-        "ntfs-3g",
-        "ntp",
-        "openssh",
-        "os-prober",
-        "pacman-contrib",
-        "python",
-        "python-pip",
-        "reflector",
-        "ruby",
-        "rust",
-        "sof-firmware",
-        "traceroute",
-        "ufw",
-        "usbutils",
-        "util-linux",
-        "vim",
-        "xfsprogs",
-        // Required by current installer behavior (dotfiles + enabled services).
-        "sudo",
-        "git",
-        "bluez",
-        "bluez-utils",
-        "cups",
-    ];
-    packages.extend_from_slice(kernel.packages());
-    packages
-}
-
-pub fn nvidia_packages() -> &'static [&'static str] {
-    &["nvidia-dkms", "nvidia-utils", "lib32-nvidia-utils"]
-}
-
-pub fn full_package_list(de: &DesktopEnv, kernel: &KernelVariant, nvidia: bool) -> Vec<&'static str> {
-    let mut combined = base_packages(kernel);
-    combined.extend_from_slice(de.packages());
-    if nvidia {
-        combined.extend_from_slice(nvidia_packages());
+fn profile_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(cwd) = env::current_dir() {
+        paths.push(cwd.join("profiles"));
     }
+    let manifest_profiles = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("profiles");
+    paths.push(manifest_profiles);
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("profiles"));
+            if let Some(parent) = dir.parent() {
+                paths.push(parent.join("profiles"));
+            }
+        }
+    }
+    paths
+}
 
+fn profiles_dir() -> Result<PathBuf, String> {
+    for candidate in profile_search_paths() {
+        if candidate.is_dir() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "Could not find profiles directory. Checked: {}",
+        profile_search_paths()
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn parse_package_list(contents: &str) -> Vec<String> {
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn load_profile_file_from_dir(dir: &Path, filename: &str) -> Result<Vec<String>, String> {
+    let path = dir.join(filename);
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read profile {}: {}", path.display(), e))?;
+    Ok(parse_package_list(&contents))
+}
+
+pub fn load_profile_packages(filename: &str) -> Result<Vec<String>, String> {
+    let dir = profiles_dir()?;
+    load_profile_file_from_dir(&dir, filename)
+}
+
+fn merge_packages(groups: &[Vec<String>]) -> Vec<String> {
     let mut packages = Vec::new();
-    for pkg in combined {
-        if !packages.contains(&pkg) {
-            packages.push(pkg);
+    for group in groups {
+        for pkg in group {
+            if !packages.contains(pkg) {
+                packages.push(pkg.clone());
+            }
         }
     }
     packages
+}
+
+pub fn desktop_profile_packages(de: &DesktopEnv) -> Result<Vec<String>, String> {
+    load_profile_packages(de.profile_filename())
+}
+
+pub fn full_package_list(
+    de: &DesktopEnv,
+    kernel: &KernelVariant,
+    nvidia: bool,
+) -> Result<Vec<String>, String> {
+    let mut groups = vec![
+        load_profile_packages("base.txt")?,
+        desktop_profile_packages(de)?,
+        load_profile_packages(kernel.profile_filename())?,
+    ];
+    if nvidia {
+        groups.push(load_profile_packages("nvidia.txt")?);
+    }
+    Ok(merge_packages(&groups))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DesktopEnv, KernelVariant, desktop_profile_packages, full_package_list, merge_packages,
+        parse_package_list,
+    };
+
+    #[test]
+    fn parser_ignores_comments_and_blank_lines() {
+        let packages = parse_package_list(
+            "\n# comment\nbase\n\nnetworkmanager\n  # indented comment\nvim\n",
+        );
+        assert_eq!(packages, vec!["base", "networkmanager", "vim"]);
+    }
+
+    #[test]
+    fn merge_keeps_first_seen_order() {
+        let merged = merge_packages(&[
+            vec!["base".to_string(), "vim".to_string()],
+            vec!["vim".to_string(), "gdm".to_string()],
+            vec!["gdm".to_string(), "linux".to_string()],
+        ]);
+        assert_eq!(merged, vec!["base", "vim", "gdm", "linux"]);
+    }
+
+    #[test]
+    fn desktop_and_kernel_map_to_expected_files() {
+        assert_eq!(DesktopEnv::Gnome.profile_filename(), "gnome.txt");
+        assert_eq!(DesktopEnv::Server.profile_filename(), "server.txt");
+        assert_eq!(KernelVariant::Standard.profile_filename(), "kernel-standard.txt");
+        assert_eq!(KernelVariant::Hardened.profile_filename(), "kernel-hardened.txt");
+    }
+
+    #[test]
+    fn desktop_profile_packages_load_from_text_file() {
+        let packages = desktop_profile_packages(&DesktopEnv::Kde).unwrap();
+        assert_eq!(packages, vec!["plasma-meta", "kde-applications-meta", "sddm"]);
+    }
+
+    #[test]
+    fn full_package_list_merges_base_desktop_kernel_and_nvidia() {
+        let packages = full_package_list(&DesktopEnv::Gnome, &KernelVariant::Standard, true).unwrap();
+        assert!(packages.contains(&"base".to_string()));
+        assert!(packages.contains(&"gnome".to_string()));
+        assert!(packages.contains(&"linux".to_string()));
+        assert!(packages.contains(&"nvidia-dkms".to_string()));
+        assert_eq!(
+            packages.iter().filter(|pkg| pkg.as_str() == "gdm").count(),
+            1
+        );
+    }
 }

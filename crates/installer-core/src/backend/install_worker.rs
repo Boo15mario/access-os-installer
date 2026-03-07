@@ -76,9 +76,10 @@ fn get_root_uuid(root_partition: &str) -> Result<String, String> {
 }
 
 pub fn run_pacstrap(config: &InstallConfig) -> Result<(), String> {
-    let packages = config_engine::full_package_list(&config.desktop_env, &config.kernel, config.nvidia);
+    let packages =
+        config_engine::full_package_list(&config.desktop_env, &config.kernel, config.nvidia)?;
     let mut args: Vec<&str> = vec!["-K", "/mnt"];
-    args.extend(packages.iter());
+    args.extend(packages.iter().map(String::as_str));
     run_command("pacstrap", &args, "pacstrap failed")
 }
 

@@ -9,6 +9,7 @@ This repository is a Cargo workspace with multiple installers sharing one backen
 - `gtk/` (`access-os-installer`): GTK4 wizard UI. This is what the desktop entry launches.
 - `cli/` (`access-os-installer-cli`): line-oriented wizard designed to work well with screen readers (no curses/TUI). Supports typed navigation commands like `next` / `back`.
 - `crates/installer-core/` (`installer-core`): shared install backend (disk/network/preflight/storage planning + install pipeline).
+- `profiles/`: plain text package lists used by install profiles and UI previews.
 
 Contributor guidelines live in [AGENTS.md](/home/alek/git/access-os-installer/AGENTS.md).
 
@@ -41,6 +42,8 @@ The real install path expects an Arch-based live environment with tools such as 
 The backend can perform destructive disk operations (e.g. wiping a target drive and repartitioning). Prefer `--dry-run` while developing, and only test real installs in a VM or on a spare disk.
 
 CLI manual partitioning can queue role-based `EFI`, `root`, `home`, and `swap` partition creates/deletes on the selected install disk and optional separate `/home` disk. Deletes require an explicit confirmation token and are applied during the final install phase.
+
+Package membership lives in `profiles/*.txt` with one package per line. Edit those files to add or remove packages for `base`, desktop environments, kernel variants, or Nvidia support.
 
 ## Accessibility Notes
 

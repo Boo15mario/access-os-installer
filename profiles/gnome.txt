@@ -1,0 +1,4 @@
+gnome
+gnome-tweaks
+gdm
+breeze-gtk

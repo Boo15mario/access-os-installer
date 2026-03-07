@@ -1,5 +1,5 @@
 use crate::app::state::SharedState;
-use crate::backend::config_engine::DesktopEnv;
+use crate::backend::config_engine::{self, DesktopEnv};
 use crate::ui::common::a11y::{
     append_list_row, apply_button_role, build_list_box, build_mnemonic_label,
     select_list_box_index, selected_list_box_index, set_accessible_description,
@@ -44,10 +44,10 @@ pub fn build_de_step(stack: &Stack, state: SharedState) -> Box {
         let next_btn = next_btn.clone();
         move |index: usize| {
             if let Some(de) = DesktopEnv::from_index(index) {
-                let packages = if de.packages().is_empty() {
-                    "(none)".to_string()
-                } else {
-                    de.packages().join(", ")
+                let packages = match config_engine::desktop_profile_packages(de) {
+                    Ok(packages) if packages.is_empty() => "(none)".to_string(),
+                    Ok(packages) => packages.join(", "),
+                    Err(err) => format!("Profile load error: {}", err),
                 };
                 let dm = de.display_manager().unwrap_or("None (headless)");
                 description_label.set_label(&format!(

@@ -6,6 +6,7 @@
 - `crates/installer-core/`: shared backend library (disk/network/preflight/storage planning + services).
 - `cli/`: line-based CLI wizard intended to work well with screen readers (no curses/TUI).
 - `gtk/`: GTK4 installer app (wizard UI + accessibility helpers). `access-os-installer.desktop` targets this binary.
+- `profiles/`: plain text package lists for base, desktop, kernel, and Nvidia profiles.
 - `assets/`: runtime assets (e.g. `assets/login.wav`, `assets/access-os-installer.svg`).
 - `docs/plans/`: design docs and implementation plans for major changes.
 
@@ -34,6 +35,7 @@ Notes:
 - Indentation: 4 spaces; keep functions small and step builders readable/testable.
 - Naming: `snake_case` (fns/modules), `CamelCase` (types), `SCREAMING_SNAKE_CASE` (constants).
 - Put install logic in `crates/installer-core/` and call it from `cli/` and `gtk/` (avoid duplicating behavior).
+- Edit package membership in `profiles/*.txt`, not hardcoded Rust arrays.
 - CLI manual partition manager logic lives primarily in `cli/src/wizard.rs` and `crates/installer-core/src/backend/{storage_plan,disk_manager}.rs`.
 - GTK: prefer `gtk/src/ui/common/a11y.rs` helpers over ad-hoc accessible labels/roles.
 
