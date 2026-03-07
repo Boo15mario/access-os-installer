@@ -1,7 +1,9 @@
 use serde::Deserialize;
 use std::process::Command;
 
-use super::storage_plan::{AutoPartitionPlan, FilesystemType, ResolvedInstallLayout, SwapAction};
+use super::storage_plan::{
+    AutoPartitionPlan, FilesystemType, ManualCreatePartition, ResolvedInstallLayout, SwapAction,
+};
 
 fn run_command(program: &str, args: &[&str], context: &str) -> Result<(), String> {
     let output = Command::new(program)
@@ -53,6 +55,7 @@ pub struct BlockDevice {
 pub struct PartitionInfo {
     pub path: String,
     pub parent_disk: String,
+    pub partition_number: u8,
     pub size_bytes: u64,
     pub fstype: Option<String>,
 }
@@ -86,7 +89,7 @@ pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
 
 pub fn get_partition_devices() -> Result<Vec<PartitionInfo>, String> {
     let output = Command::new("lsblk")
-        .args(["-b", "-r", "-o", "NAME,TYPE,PKNAME,SIZE,FSTYPE"])
+        .args(["-b", "-r", "-o", "NAME,TYPE,PKNAME,PARTN,SIZE,FSTYPE"])
         .output()
         .map_err(|e| format!("Failed to execute lsblk for partitions: {}", e))?;
 
@@ -110,6 +113,9 @@ pub fn get_partition_devices() -> Result<Vec<PartitionInfo>, String> {
         let Some(parent) = fields.next() else {
             continue;
         };
+        let Some(partition_number_raw) = fields.next() else {
+            continue;
+        };
         let Some(size_raw) = fields.next() else {
             continue;
         };
@@ -119,10 +125,12 @@ pub fn get_partition_devices() -> Result<Vec<PartitionInfo>, String> {
             continue;
         }
 
+        let partition_number = partition_number_raw.parse::<u8>().unwrap_or(0);
         let size_bytes = size_raw.parse::<u64>().unwrap_or(0);
         partitions.push(PartitionInfo {
             path: format!("/dev/{}", name),
             parent_disk: format!("/dev/{}", parent),
+            partition_number,
             size_bytes,
             fstype,
         });
@@ -136,6 +144,13 @@ pub fn get_partitions_for_disk(disk_path: &str) -> Result<Vec<PartitionInfo>, St
     Ok(get_partition_devices()?
         .into_iter()
         .filter(|partition| partition.parent_disk == disk_path)
+        .collect())
+}
+
+pub fn get_partitions_for_managed_disks(allowed_disks: &[String]) -> Result<Vec<PartitionInfo>, String> {
+    Ok(get_partition_devices()?
+        .into_iter()
+        .filter(|partition| allowed_disks.iter().any(|disk| disk == &partition.parent_disk))
         .collect())
 }
 
@@ -174,6 +189,99 @@ pub fn partition_device_path(drive: &str, partition: u8) -> String {
     } else {
         format!("{}{}", drive, suffix)
     }
+}
+
+pub fn partition_belongs_to_disk(partition_path: &str, disk_path: &str) -> bool {
+    partition_path.starts_with(disk_path)
+}
+
+pub fn partition_belongs_to_managed_disks(partition_path: &str, allowed_disks: &[String]) -> bool {
+    allowed_disks
+        .iter()
+        .any(|disk| partition_belongs_to_disk(partition_path, disk))
+}
+
+pub fn next_available_partition_number(
+    disk: &str,
+    existing: &[PartitionInfo],
+    pending_creates: &[ManualCreatePartition],
+    pending_deletes: &[String],
+) -> Result<u8, String> {
+    let mut used = Vec::new();
+    for partition in existing.iter().filter(|partition| partition.parent_disk == disk) {
+        if pending_deletes.iter().any(|path| path == &partition.path) {
+            continue;
+        }
+        if partition.partition_number > 0 {
+            used.push(partition.partition_number);
+        }
+    }
+    for action in pending_creates.iter().filter(|action| action.disk == disk) {
+        used.push(action.partition_number);
+    }
+    used.sort_unstable();
+    used.dedup();
+
+    for number in 1..=127 {
+        if !used.contains(&number) {
+            return Ok(number);
+        }
+    }
+
+    Err(format!("No free GPT partition numbers remain on {}", disk))
+}
+
+pub fn create_manual_partition(action: &ManualCreatePartition) -> Result<(), String> {
+    let number = action.partition_number.to_string();
+    let size = if action.use_remaining {
+        "0".to_string()
+    } else {
+        format!("+{}G", action.size_gib.unwrap_or(0))
+    };
+    let type_code = format!("{}:{}", action.partition_number, action.role.gpt_type());
+    let label = format!("{}:{}", action.partition_number, action.role.label().to_lowercase());
+
+    run_command(
+        "sgdisk",
+        &[
+            "-n",
+            &format!("{}:0:{}", number, size),
+            "-t",
+            &type_code,
+            "-c",
+            &label,
+            &action.disk,
+        ],
+        &format!(
+            "Failed to create {} partition on {}",
+            action.role.label(),
+            action.disk
+        ),
+    )
+}
+
+pub fn delete_partition(partition_path: &str, allowed_disks: &[String]) -> Result<(), String> {
+    if !partition_belongs_to_managed_disks(partition_path, allowed_disks) {
+        return Err(format!(
+            "Partition {} is outside the selected install/home disks.",
+            partition_path
+        ));
+    }
+
+    let partition = get_partition_devices()?
+        .into_iter()
+        .find(|candidate| candidate.path == partition_path)
+        .ok_or_else(|| format!("Partition {} was not found.", partition_path))?;
+
+    run_command(
+        "sgdisk",
+        &[
+            "--delete",
+            &partition.partition_number.to_string(),
+            &partition.parent_disk,
+        ],
+        &format!("Failed to delete {}", partition_path),
+    )
 }
 
 #[allow(dead_code)]
@@ -351,6 +459,13 @@ pub fn execute_layout(layout: &ResolvedInstallLayout) -> Result<(), String> {
         apply_auto_partition(plan)?;
     }
 
+    for partition in &layout.partitions_to_delete {
+        delete_partition(partition, &layout.managed_disks)?;
+    }
+    for action in &layout.manual_create_actions {
+        create_manual_partition(action)?;
+    }
+
     for action in &layout.format_actions {
         format_partition(&action.device, &action.fs)?;
     }
@@ -409,8 +524,11 @@ pub fn setup_swap_file(layout: &ResolvedInstallLayout) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockDevice, RmFlag, get_internal_block_devices, is_internal_device, partition_device_path,
+        BlockDevice, ManualCreatePartition, PartitionInfo, RmFlag, get_internal_block_devices,
+        get_partitions_for_managed_disks, is_internal_device, next_available_partition_number,
+        partition_belongs_to_managed_disks, partition_device_path,
     };
+    use crate::backend::storage_plan::ManualPartitionRole;
 
     fn fixture_device(
         name: &str,
@@ -425,6 +543,16 @@ mod tests {
             tran: tran.map(|value| value.to_string()),
             rm,
             device_type: device_type.to_string(),
+        }
+    }
+
+    fn fixture_partition(path: &str, parent_disk: &str, partition_number: u8) -> PartitionInfo {
+        PartitionInfo {
+            path: path.to_string(),
+            parent_disk: parent_disk.to_string(),
+            partition_number,
+            size_bytes: 10 * 1024 * 1024 * 1024,
+            fstype: None,
         }
     }
 
@@ -468,5 +596,46 @@ mod tests {
     fn partition_path_supports_selected_partition_refs() {
         assert_eq!(partition_device_path("/dev/nvme0n1", 4), "/dev/nvme0n1p4");
         assert_eq!(partition_device_path("/dev/sda", 2), "/dev/sda2");
+    }
+
+    #[test]
+    fn managed_disk_filter_function_is_available() {
+        let _ = get_partitions_for_managed_disks;
+    }
+
+    #[test]
+    fn next_partition_number_reuses_deleted_slot() {
+        let existing = vec![
+            fixture_partition("/dev/nvme0n1p1", "/dev/nvme0n1", 1),
+            fixture_partition("/dev/nvme0n1p2", "/dev/nvme0n1", 2),
+            fixture_partition("/dev/nvme0n1p3", "/dev/nvme0n1", 3),
+        ];
+        let pending_creates = vec![ManualCreatePartition {
+            disk: "/dev/nvme0n1".to_string(),
+            partition_number: 4,
+            role: ManualPartitionRole::Root,
+            size_gib: None,
+            use_remaining: true,
+            path: "/dev/nvme0n1p4".to_string(),
+        }];
+        let pending_deletes = vec!["/dev/nvme0n1p2".to_string()];
+
+        let next = next_available_partition_number(
+            "/dev/nvme0n1",
+            &existing,
+            &pending_creates,
+            &pending_deletes,
+        )
+        .unwrap();
+
+        assert_eq!(next, 2);
+    }
+
+    #[test]
+    fn managed_disk_check_handles_nvme_and_sata() {
+        let allowed = vec!["/dev/nvme0n1".to_string(), "/dev/sda".to_string()];
+        assert!(partition_belongs_to_managed_disks("/dev/nvme0n1p4", &allowed));
+        assert!(partition_belongs_to_managed_disks("/dev/sda2", &allowed));
+        assert!(!partition_belongs_to_managed_disks("/dev/sdb1", &allowed));
     }
 }

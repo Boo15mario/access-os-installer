@@ -144,6 +144,8 @@ pub fn storage_selection_from_state(state: &AppState) -> StorageSelection {
         } else {
             Some(state.manual_swap_partition.clone())
         },
+        manual_create_actions: Vec::new(),
+        manual_delete_partitions: Vec::new(),
         format_efi: state.format_efi,
         format_root: state.format_root,
         format_home: state.format_home,

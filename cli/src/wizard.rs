@@ -1,7 +1,8 @@
 use installer_core::backend::config_engine::{DesktopEnv, KernelVariant};
 use installer_core::backend::disk_manager::{self};
 use installer_core::backend::storage_plan::{
-    self, HomeLocation, HomeMode, ResolvedInstallLayout, SetupMode, StorageSelection, SwapMode,
+    self, HomeLocation, HomeMode, ManualCreatePartition, ManualPartitionRole,
+    ResolvedInstallLayout, SetupMode, StorageSelection, SwapMode,
 };
 use installer_core::backend::{network, preflight};
 use installer_core::constants::{KEYMAPS, LOCALES, MIRROR_REGIONS, TIMEZONES};
@@ -83,6 +84,8 @@ impl Wizard {
                     manual_root_partition: None,
                     manual_home_partition: None,
                     manual_swap_partition: None,
+                    manual_create_actions: Vec::new(),
+                    manual_delete_partitions: Vec::new(),
                     format_efi: true,
                     format_root: true,
                     format_home: true,
@@ -301,21 +304,29 @@ impl Wizard {
                 ),
             }
             println!("5) Home mode: {:?}", self.state.storage.home_mode);
-            if self.state.storage.home_mode == HomeMode::Separate
-                && self.state.storage.setup_mode == SetupMode::Automatic
-            {
-                println!(
-                    "6) Home disk (auto): {}",
+            println!("6) Home location: {}", self.home_location_label());
+            println!(
+                "7) Home disk: {}",
+                if self.state.storage.home_mode == HomeMode::Separate
+                    && self.state.storage.home_location == HomeLocation::OtherDisk
+                {
                     self.state
                         .storage
                         .home_disk
                         .as_deref()
                         .unwrap_or("(not selected)")
-                );
-            }
-            if self.state.storage.setup_mode == SetupMode::Manual {
-                println!("6) Manual partitions + format flags");
-            }
+                } else {
+                    "n/a"
+                }
+            );
+            println!(
+                "8) Manual partition manager: {}",
+                if self.state.storage.setup_mode == SetupMode::Manual {
+                    "open"
+                } else {
+                    "n/a"
+                }
+            );
             println!();
             println!("Type a number to edit, or `next` / `back`.");
 
@@ -348,13 +359,13 @@ impl Wizard {
                 "3" => self.select_swap_mode()?,
                 "4" => self.edit_swap_size()?,
                 "5" => self.select_home_mode()?,
-                "6" => {
+                "6" => self.select_home_location()?,
+                "7" => self.select_home_disk()?,
+                "8" => {
                     if self.state.storage.setup_mode == SetupMode::Manual {
                         self.edit_manual_partitions()?;
-                    } else if self.state.storage.home_mode == HomeMode::Separate {
-                        self.select_home_disk_auto()?;
                     } else {
-                        println!("Nothing to edit for option 6 in the current configuration.");
+                        println!("Manual partition manager is only available in manual setup mode.");
                     }
                 }
                 other => println!("Unknown input: {}", other),
@@ -796,6 +807,7 @@ impl Wizard {
                 }
                 "2" => {
                     self.state.storage.swap_mode = SwapMode::File;
+                    self.clear_manual_role_state(ManualPartitionRole::Swap);
                     return Ok(());
                 }
                 _ => println!("Invalid input."),
@@ -839,12 +851,14 @@ impl Wizard {
                 "back" => return Ok(()),
                 "1" => {
                     self.state.storage.home_mode = HomeMode::OnRoot;
-                    self.state.storage.manual_home_partition = None;
+                    self.state.storage.home_location = HomeLocation::SameDisk;
                     self.state.storage.home_disk = None;
+                    self.clear_manual_role_state(ManualPartitionRole::Home);
                     return Ok(());
                 }
                 "2" => {
                     self.state.storage.home_mode = HomeMode::Separate;
+                    self.state.storage.home_location = HomeLocation::SameDisk;
                     return Ok(());
                 }
                 _ => println!("Invalid input."),
@@ -852,11 +866,54 @@ impl Wizard {
         }
     }
 
-    fn select_home_disk_auto(&mut self) -> Result<(), String> {
+    fn select_home_location(&mut self) -> Result<(), String> {
+        if self.state.storage.home_mode != HomeMode::Separate {
+            println!("Home is not set to separate.");
+            return Ok(());
+        }
+
+        println!();
+        println!("Home location");
+        println!("1) Same disk as root");
+        println!("2) Other disk");
+        println!("Type a number, or `back` to cancel.");
+        loop {
+            match prompt("> ")?.as_str() {
+                "back" => return Ok(()),
+                "1" => {
+                    self.state.storage.home_location = HomeLocation::SameDisk;
+                    self.state.storage.home_disk = None;
+                    return Ok(());
+                }
+                "2" => {
+                    self.state.storage.home_location = HomeLocation::OtherDisk;
+                    return self.select_home_disk();
+                }
+                _ => println!("Invalid input."),
+            }
+        }
+    }
+
+    fn select_home_disk(&mut self) -> Result<(), String> {
+        if self.state.storage.home_mode != HomeMode::Separate
+            || self.state.storage.home_location != HomeLocation::OtherDisk
+        {
+            println!("Home disk selection is only used for a separate /home on another disk.");
+            return Ok(());
+        }
+
         let devices = disk_manager::get_internal_block_devices()
             .map_err(|e| format!("Failed to list internal drives: {}", e))?;
+        let devices: Vec<_> = devices
+            .into_iter()
+            .filter(|device| format!("/dev/{}", device.name) != self.state.storage.install_disk)
+            .collect();
+        if devices.is_empty() {
+            println!("No second internal disk is available for /home.");
+            return Ok(());
+        }
         println!();
-        println!("Select home disk (automatic mode)");
+        println!("Select home disk");
         for (idx, device) in devices.iter().enumerate() {
             println!("{}) /dev/{}", idx + 1, device.name);
         }
@@ -870,7 +927,6 @@ impl Wizard {
                         println!("Invalid selection.");
                         continue;
                     }
-                    self.state.storage.home_location = HomeLocation::OtherDisk;
                     self.state.storage.home_disk = Some(format!("/dev/{}", devices[choice - 1].name));
                     return Ok(());
                 }
@@ -880,87 +936,526 @@ impl Wizard {
 
     fn edit_manual_partitions(&mut self) -> Result<(), String> {
         loop {
+            self.normalize_manual_storage_state();
+            let partitions = self.manual_partition_entries()?;
+
             println!();
             println!("Manual partitions");
             println!(
-                "1) EFI partition: {}",
-                self.state
-                    .storage
-                    .manual_efi_partition
-                    .as_deref()
-                    .unwrap_or("(not set)")
+                "Managed disks: {}",
+                join_or_none(&storage_plan::managed_disks(&self.state.storage))
             );
+            println!("EFI: {}", self.manual_role_label(ManualPartitionRole::Efi));
+            println!("root: {}", self.manual_role_label(ManualPartitionRole::Root));
+            if self.state.storage.home_mode == HomeMode::Separate {
+                println!("home: {}", self.manual_role_label(ManualPartitionRole::Home));
+            }
+            if self.state.storage.swap_mode == SwapMode::Partition {
+                println!("swap: {}", self.manual_role_label(ManualPartitionRole::Swap));
+            }
             println!(
-                "2) Root partition: {}",
-                self.state
-                    .storage
-                    .manual_root_partition
-                    .as_deref()
-                    .unwrap_or("(not set)")
+                "Format flags: EFI {} | root {}{}{}",
+                yes_no(self.state.storage.format_efi),
+                yes_no(self.state.storage.format_root),
+                if self.state.storage.home_mode == HomeMode::Separate {
+                    format!(" | home {}", yes_no(self.state.storage.format_home))
+                } else {
+                    String::new()
+                },
+                if self.state.storage.swap_mode == SwapMode::Partition {
+                    format!(" | swap {}", yes_no(self.state.storage.format_swap))
+                } else {
+                    String::new()
+                }
             );
-            if self.state.storage.home_mode == HomeMode::Separate {
-                println!(
-                    "3) /home partition: {}",
-                    self.state
-                        .storage
-                        .manual_home_partition
-                        .as_deref()
-                        .unwrap_or("(not set)")
-                );
-            }
-            if self.state.storage.swap_mode == SwapMode::Partition {
-                println!(
-                    "4) swap partition: {}",
-                    self.state
-                        .storage
-                        .manual_swap_partition
-                        .as_deref()
-                        .unwrap_or("(not set)")
-                );
-            }
-            println!("5) Format EFI: {}", yes_no(self.state.storage.format_efi));
-            println!("6) Format root: {}", yes_no(self.state.storage.format_root));
-            if self.state.storage.home_mode == HomeMode::Separate {
-                println!("7) Format /home: {}", yes_no(self.state.storage.format_home));
-            }
-            if self.state.storage.swap_mode == SwapMode::Partition {
-                println!("8) Format swap: {}", yes_no(self.state.storage.format_swap));
+            println!();
+            println!("Partitions:");
+            if partitions.is_empty() {
+                println!("- none");
+            } else {
+                for (idx, part) in partitions.iter().enumerate() {
+                    println!(
+                        "{}) {} | {} | {} | {}",
+                        idx + 1,
+                        part.path,
+                        part.size_label,
+                        empty_as(&part.fstype, "unknown"),
+                        part.status_label
+                    );
+                }
             }
             println!();
-            println!("Type a number to edit/toggle, or `back` to return.");
+            println!("1) Create partition");
+            println!("2) Delete partition");
+            println!("3) Assign role");
+            println!("4) Toggle format flags");
+            println!("5) Back");
+
+            match prompt("> ")?.as_str() {
+                "back" | "5" => return Ok(()),
+                "1" => self.create_manual_partition_flow()?,
+                "2" => self.delete_manual_partition_flow()?,
+                "3" => self.assign_manual_role_flow()?,
+                "4" => self.toggle_manual_format_flags()?,
+                "help" => println!("Create, delete, assign, and format installer partitions on the managed disks."),
+                other => println!("Unknown input: {}", other),
+            }
+        }
+    }
+
+    fn create_manual_partition_flow(&mut self) -> Result<(), String> {
+        let Some(role) = self.pick_manual_role("Create partition", "Choose a role to create.")? else {
+            return Ok(());
+        };
+        let candidate_disks = self.manual_role_target_disks(role);
+        if candidate_disks.is_empty() {
+            println!("No managed disk is available for {}.", role.label());
+            return Ok(());
+        }
+
+        let disk = if candidate_disks.len() == 1 {
+            candidate_disks[0].clone()
+        } else {
+            match self.choose_disk_from_list("Target disk", &candidate_disks)? {
+                Some(value) => value,
+                None => return Ok(()),
+            }
+        };
+
+        let existing = disk_manager::get_partitions_for_managed_disks(&storage_plan::managed_disks(
+            &self.state.storage,
+        ))?;
+        let partition_number = disk_manager::next_available_partition_number(
+            &disk,
+            &existing,
+            &self.state.storage.manual_create_actions,
+            &self.state.storage.manual_delete_partitions,
+        )?;
+        let Some((size_gib, use_remaining)) = self.prompt_manual_partition_size(role)? else {
+            return Ok(());
+        };
+        let path = disk_manager::partition_device_path(&disk, partition_number);
+        let action = ManualCreatePartition {
+            disk: disk.clone(),
+            partition_number,
+            role,
+            size_gib,
+            use_remaining,
+            path: path.clone(),
+        };
+        self.state.storage.manual_create_actions.push(action);
+        self.set_manual_role_assignment(role, Some(path.clone()));
+
+        println!("Planned {} on {} as {}.", path, disk, role.label());
+        Ok(())
+    }
+
+    fn delete_manual_partition_flow(&mut self) -> Result<(), String> {
+        let partitions = self.manual_partition_entries()?;
+        if partitions.is_empty() {
+            println!("No managed partitions are available to delete.");
+            return Ok(());
+        }
+
+        println!();
+        println!("Delete partition");
+        for (idx, part) in partitions.iter().enumerate() {
+            println!("{}) {} | {}", idx + 1, part.path, part.status_label);
+        }
+        println!("Type a number, or `back` to cancel.");
+
+        let target = loop {
+            match prompt("> ")?.as_str() {
+                "back" => return Ok(()),
+                other => {
+                    let choice = other.parse::<usize>().ok().unwrap_or(0);
+                    if choice == 0 || choice > partitions.len() {
+                        println!("Invalid selection.");
+                        continue;
+                    }
+                    break partitions[choice - 1].clone();
+                }
+            }
+        };
+
+        let token = format!("delete {}", target.path);
+        println!(
+            "Type `{}` to confirm. Assigned roles using this partition will be cleared.",
+            token
+        );
+        if prompt("> ")? != token {
+            println!("Delete cancelled.");
+            return Ok(());
+        }
+
+        if target.pending_create {
+            self.state
+                .storage
+                .manual_create_actions
+                .retain(|action| action.path != target.path);
+        } else if !self
+            .state
+            .storage
+            .manual_delete_partitions
+            .iter()
+            .any(|path| path == &target.path)
+        {
+            self.state
+                .storage
+                .manual_delete_partitions
+                .push(target.path.clone());
+        }
+        self.clear_assignments_for_path(&target.path);
+        storage_plan::clear_deleted_partition_assignments(&mut self.state.storage);
+        println!("Marked {} for deletion.", target.path);
+        Ok(())
+    }
+
+    fn assign_manual_role_flow(&mut self) -> Result<(), String> {
+        let Some(role) = self.pick_manual_role("Assign role", "Choose a role to assign.")? else {
+            return Ok(());
+        };
+        let target_disks = self.manual_role_target_disks(role);
+        let partitions: Vec<_> = self
+            .manual_partition_entries()?
+            .into_iter()
+            .filter(|partition| target_disks.iter().any(|disk| disk == &partition.parent_disk))
+            .collect();
+
+        println!();
+        println!("Assign {}", role.label());
+        println!("Current: {}", self.manual_role_label(role));
+        if partitions.is_empty() {
+            println!("No partitions are available for {}.", role.label());
+            return Ok(());
+        }
+
+        for (idx, part) in partitions.iter().enumerate() {
+            println!("{}) {} | {}", idx + 1, part.path, part.status_label);
+        }
+        println!("Type a number, `clear`, or `back`.");
+        loop {
+            match prompt("> ")?.as_str() {
+                "back" => return Ok(()),
+                "clear" => {
+                    self.set_manual_role_assignment(role, None);
+                    return Ok(());
+                }
+                other => {
+                    let choice = other.parse::<usize>().ok().unwrap_or(0);
+                    if choice == 0 || choice > partitions.len() {
+                        println!("Invalid selection.");
+                        continue;
+                    }
+                    self.set_manual_role_assignment(role, Some(partitions[choice - 1].path.clone()));
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    fn toggle_manual_format_flags(&mut self) -> Result<(), String> {
+        loop {
+            println!();
+            println!("Format flags");
+            println!("1) EFI: {}", yes_no(self.state.storage.format_efi));
+            println!("2) root: {}", yes_no(self.state.storage.format_root));
+            if self.state.storage.home_mode == HomeMode::Separate {
+                println!("3) home: {}", yes_no(self.state.storage.format_home));
+            }
+            if self.state.storage.swap_mode == SwapMode::Partition {
+                println!("4) swap: {}", yes_no(self.state.storage.format_swap));
+            }
+            println!("Type a number to toggle, or `back`.");
 
             match prompt("> ")?.as_str() {
                 "back" => return Ok(()),
-                "1" => self.state.storage.manual_efi_partition = pick_partition_path("EFI")?,
-                "2" => self.state.storage.manual_root_partition = pick_partition_path("root")?,
+                "1" => self.state.storage.format_efi = !self.state.storage.format_efi,
+                "2" => self.state.storage.format_root = !self.state.storage.format_root,
                 "3" => {
                     if self.state.storage.home_mode == HomeMode::Separate {
-                        self.state.storage.manual_home_partition = pick_partition_path("/home")?;
+                        self.state.storage.format_home = !self.state.storage.format_home;
                     } else {
                         println!("Home is not set to separate.");
                     }
                 }
                 "4" => {
                     if self.state.storage.swap_mode == SwapMode::Partition {
-                        self.state.storage.manual_swap_partition = pick_partition_path("swap")?;
+                        self.state.storage.format_swap = !self.state.storage.format_swap;
                     } else {
                         println!("Swap mode is not a partition.");
                     }
                 }
-                "5" => self.state.storage.format_efi = !self.state.storage.format_efi,
-                "6" => self.state.storage.format_root = !self.state.storage.format_root,
-                "7" => {
-                    if self.state.storage.home_mode == HomeMode::Separate {
-                        self.state.storage.format_home = !self.state.storage.format_home
-                    }
-                }
-                "8" => {
-                    if self.state.storage.swap_mode == SwapMode::Partition {
-                        self.state.storage.format_swap = !self.state.storage.format_swap
-                    }
-                }
-                other => println!("Unknown input: {}", other),
+                _ => println!("Invalid input."),
             }
+        }
+    }
+
+    fn pick_manual_role(
+        &self,
+        title: &str,
+        guidance: &str,
+    ) -> Result<Option<ManualPartitionRole>, String> {
+        let roles = storage_plan::valid_manual_roles(&self.state.storage);
+        println!();
+        println!("{}", title);
+        println!("{}", guidance);
+        for (idx, role) in roles.iter().enumerate() {
+            println!("{}) {}", idx + 1, role.label());
+        }
+        println!("Type a number, or `back` to cancel.");
+
+        loop {
+            match prompt("> ")?.as_str() {
+                "back" => return Ok(None),
+                other => {
+                    let choice = other.parse::<usize>().ok().unwrap_or(0);
+                    if choice == 0 || choice > roles.len() {
+                        println!("Invalid selection.");
+                        continue;
+                    }
+                    return Ok(Some(roles[choice - 1]));
+                }
+            }
+        }
+    }
+
+    fn choose_disk_from_list(
+        &self,
+        title: &str,
+        disks: &[String],
+    ) -> Result<Option<String>, String> {
+        println!();
+        println!("{}", title);
+        for (idx, disk) in disks.iter().enumerate() {
+            println!("{}) {}", idx + 1, disk);
+        }
+        println!("Type a number, or `back` to cancel.");
+        loop {
+            match prompt("> ")?.as_str() {
+                "back" => return Ok(None),
+                other => {
+                    let choice = other.parse::<usize>().ok().unwrap_or(0);
+                    if choice == 0 || choice > disks.len() {
+                        println!("Invalid selection.");
+                        continue;
+                    }
+                    return Ok(Some(disks[choice - 1].clone()));
+                }
+            }
+        }
+    }
+
+    fn prompt_manual_partition_size(
+        &self,
+        role: ManualPartitionRole,
+    ) -> Result<Option<(Option<u64>, bool)>, String> {
+        match role {
+            ManualPartitionRole::Root => {
+                println!();
+                println!("Root size");
+                println!("1) Use remaining free space");
+                println!("2) Enter size in GiB");
+                println!("Type a number, or `back` to cancel.");
+                loop {
+                    match prompt("> ")?.as_str() {
+                        "back" => return Ok(None),
+                        "1" => return Ok(Some((None, true))),
+                        "2" => {
+                            let size = prompt("Size in GiB: ")?;
+                            let gib = size.parse::<u64>().unwrap_or(0);
+                            if gib == 0 {
+                                println!("Size must be greater than zero.");
+                                continue;
+                            }
+                            return Ok(Some((Some(gib), false)));
+                        }
+                        _ => println!("Invalid input."),
+                    }
+                }
+            }
+            _ => loop {
+                let size = prompt(&format!("{} size in GiB: ", role.label()))?;
+                if size == "back" {
+                    return Ok(None);
+                }
+                let gib = size.parse::<u64>().unwrap_or(0);
+                if gib == 0 {
+                    println!("Size must be greater than zero.");
+                    continue;
+                }
+                return Ok(Some((Some(gib), false)));
+            },
+        }
+    }
+
+    fn manual_partition_entries(&self) -> Result<Vec<ManualPartitionEntry>, String> {
+        let managed_disks = storage_plan::managed_disks(&self.state.storage);
+        if managed_disks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut entries: Vec<ManualPartitionEntry> = disk_manager::get_partitions_for_managed_disks(
+            &managed_disks,
+        )?
+        .into_iter()
+        .filter(|partition| {
+            !self
+                .state
+                .storage
+                .manual_delete_partitions
+                .iter()
+                .any(|path| path == &partition.path)
+        })
+        .map(|partition| ManualPartitionEntry {
+            path: partition.path,
+            parent_disk: partition.parent_disk,
+            partition_number: partition.partition_number,
+            size_label: disk_manager::human_gib_label(partition.size_bytes),
+            fstype: partition.fstype.unwrap_or_default(),
+            status_label: "existing".to_string(),
+            pending_create: false,
+        })
+        .collect();
+
+        for action in &self.state.storage.manual_create_actions {
+            entries.push(ManualPartitionEntry {
+                path: action.path.clone(),
+                parent_disk: action.disk.clone(),
+                partition_number: action.partition_number,
+                size_label: if action.use_remaining {
+                    "remaining space".to_string()
+                } else {
+                    format!("{} GiB", action.size_gib.unwrap_or(0))
+                },
+                fstype: action
+                    .role
+                    .default_fs(&self.root_fs_type())
+                    .label()
+                    .to_string(),
+                status_label: format!("pending {}", action.role.label()),
+                pending_create: true,
+            });
+        }
+
+        entries.sort_by(|left, right| {
+            left.parent_disk
+                .cmp(&right.parent_disk)
+                .then(left.partition_number.cmp(&right.partition_number))
+        });
+        Ok(entries)
+    }
+
+    fn manual_role_target_disks(&self, role: ManualPartitionRole) -> Vec<String> {
+        match role {
+            ManualPartitionRole::Home => storage_plan::managed_disks(&self.state.storage),
+            _ => {
+                if self.state.storage.install_disk.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![self.state.storage.install_disk.clone()]
+                }
+            }
+        }
+    }
+
+    fn manual_role_label(&self, role: ManualPartitionRole) -> &str {
+        match role {
+            ManualPartitionRole::Efi => self
+                .state
+                .storage
+                .manual_efi_partition
+                .as_deref()
+                .unwrap_or("(not set)"),
+            ManualPartitionRole::Root => self
+                .state
+                .storage
+                .manual_root_partition
+                .as_deref()
+                .unwrap_or("(not set)"),
+            ManualPartitionRole::Home => self
+                .state
+                .storage
+                .manual_home_partition
+                .as_deref()
+                .unwrap_or("(not set)"),
+            ManualPartitionRole::Swap => self
+                .state
+                .storage
+                .manual_swap_partition
+                .as_deref()
+                .unwrap_or("(not set)"),
+        }
+    }
+
+    fn set_manual_role_assignment(&mut self, role: ManualPartitionRole, path: Option<String>) {
+        match role {
+            ManualPartitionRole::Efi => self.state.storage.manual_efi_partition = path,
+            ManualPartitionRole::Root => self.state.storage.manual_root_partition = path,
+            ManualPartitionRole::Home => self.state.storage.manual_home_partition = path,
+            ManualPartitionRole::Swap => self.state.storage.manual_swap_partition = path,
+        }
+    }
+
+    fn clear_manual_role_state(&mut self, role: ManualPartitionRole) {
+        self.state
+            .storage
+            .manual_create_actions
+            .retain(|action| action.role != role);
+        self.set_manual_role_assignment(role, None);
+    }
+
+    fn clear_assignments_for_path(&mut self, path: &str) {
+        if self.state.storage.manual_efi_partition.as_deref() == Some(path) {
+            self.state.storage.manual_efi_partition = None;
+        }
+        if self.state.storage.manual_root_partition.as_deref() == Some(path) {
+            self.state.storage.manual_root_partition = None;
+        }
+        if self.state.storage.manual_home_partition.as_deref() == Some(path) {
+            self.state.storage.manual_home_partition = None;
+        }
+        if self.state.storage.manual_swap_partition.as_deref() == Some(path) {
+            self.state.storage.manual_swap_partition = None;
+        }
+    }
+
+    fn normalize_manual_storage_state(&mut self) {
+        let valid_roles = storage_plan::valid_manual_roles(&self.state.storage);
+        self.state
+            .storage
+            .manual_create_actions
+            .retain(|action| valid_roles.iter().any(|role| role == &action.role));
+        if self.state.storage.home_mode != HomeMode::Separate {
+            self.state.storage.home_location = HomeLocation::SameDisk;
+            self.state.storage.home_disk = None;
+            self.state.storage.manual_home_partition = None;
+        }
+        if self.state.storage.home_location != HomeLocation::OtherDisk {
+            self.state.storage.home_disk = None;
+        }
+        if self.state.storage.swap_mode != SwapMode::Partition {
+            self.state.storage.manual_swap_partition = None;
+        }
+        storage_plan::clear_deleted_partition_assignments(&mut self.state.storage);
+    }
+
+    fn home_location_label(&self) -> &str {
+        if self.state.storage.home_mode != HomeMode::Separate {
+            "n/a"
+        } else {
+            match self.state.storage.home_location {
+                HomeLocation::SameDisk => "same disk",
+                HomeLocation::OtherDisk => "other disk",
+            }
+        }
+    }
+
+    fn root_fs_type(&self) -> storage_plan::FilesystemType {
+        if self.state.storage.fs_type == "ext4" {
+            storage_plan::FilesystemType::Ext4
+        } else {
+            storage_plan::FilesystemType::Xfs
         }
     }
 
@@ -988,6 +1483,25 @@ impl Wizard {
                 }
             }
         }
+    }
+}
+
+#[derive(Clone)]
+struct ManualPartitionEntry {
+    path: String,
+    parent_disk: String,
+    partition_number: u8,
+    size_label: String,
+    fstype: String,
+    status_label: String,
+    pending_create: bool,
+}
+
+fn join_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "(none)".to_string()
+    } else {
+        values.join(", ")
     }
 }
 
@@ -1063,40 +1577,6 @@ fn system_ram_gib() -> u64 {
         }
     }
     0
-}
-
-fn pick_partition_path(label: &str) -> Result<Option<String>, String> {
-    let partitions = disk_manager::get_partition_devices()?;
-    if partitions.is_empty() {
-        println!("No partitions detected.");
-        return Ok(None);
-    }
-
-    println!();
-    println!("Select partition for {}", label);
-    for (idx, part) in partitions.iter().enumerate() {
-        println!(
-            "{}) {} ({}) {}",
-            idx + 1,
-            part.path,
-            disk_manager::human_gib_label(part.size_bytes),
-            part.fstype.as_deref().unwrap_or("")
-        );
-    }
-    println!("Type a number, or `back` to cancel.");
-    loop {
-        match prompt("> ")?.as_str() {
-            "back" => return Ok(None),
-            other => {
-                let choice = other.parse::<usize>().ok().unwrap_or(0);
-                if choice == 0 || choice > partitions.len() {
-                    println!("Invalid selection.");
-                    continue;
-                }
-                return Ok(Some(partitions[choice - 1].path.clone()));
-            }
-        }
-    }
 }
 
 struct SttyEchoGuard(bool);

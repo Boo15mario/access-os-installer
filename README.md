@@ -40,8 +40,9 @@ The real install path expects an Arch-based live environment with tools such as 
 
 The backend can perform destructive disk operations (e.g. wiping a target drive and repartitioning). Prefer `--dry-run` while developing, and only test real installs in a VM or on a spare disk.
 
+CLI manual partitioning can queue role-based `EFI`, `root`, `home`, and `swap` partition creates/deletes on the selected install disk and optional separate `/home` disk. Deletes require an explicit confirmation token and are applied during the final install phase.
+
 ## Accessibility Notes
 
 - GTK: the app enables AT-SPI by setting `GTK_A11Y=atspi` when it’s not already set.
 - CLI: keeps interaction line-based and avoids dense “key help” text; use `help` when needed.
-

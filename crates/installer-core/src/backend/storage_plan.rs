@@ -41,6 +41,52 @@ impl FilesystemType {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManualPartitionRole {
+    Efi,
+    Root,
+    Home,
+    Swap,
+}
+
+impl ManualPartitionRole {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Efi => "EFI",
+            Self::Root => "root",
+            Self::Home => "home",
+            Self::Swap => "swap",
+        }
+    }
+
+    pub fn gpt_type(&self) -> &'static str {
+        match self {
+            Self::Efi => "ef00",
+            Self::Root | Self::Home => "8300",
+            Self::Swap => "8200",
+        }
+    }
+
+    pub fn default_fs(&self, root_fs: &FilesystemType) -> FilesystemType {
+        match self {
+            Self::Efi => FilesystemType::Fat32,
+            Self::Root => root_fs.clone(),
+            Self::Home => FilesystemType::Ext4,
+            Self::Swap => FilesystemType::Swap,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManualCreatePartition {
+    pub disk: String,
+    pub partition_number: u8,
+    pub role: ManualPartitionRole,
+    pub size_gib: Option<u64>,
+    pub use_remaining: bool,
+    pub path: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartitionSpec {
     pub index: u8,
@@ -77,6 +123,7 @@ pub enum SwapAction {
 pub struct ResolvedInstallLayout {
     pub setup_mode: SetupMode,
     pub fs_type: FilesystemType,
+    pub managed_disks: Vec<String>,
     pub root_partition: String,
     pub efi_partition: String,
     pub home_partition: Option<String>,
@@ -85,7 +132,9 @@ pub struct ResolvedInstallLayout {
     pub mount_actions: Vec<MountAction>,
     pub swap_action: Option<SwapAction>,
     pub disks_to_wipe: Vec<String>,
+    pub partitions_to_delete: Vec<String>,
     pub partitions_to_create: Vec<String>,
+    pub manual_create_actions: Vec<ManualCreatePartition>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,6 +152,8 @@ pub struct StorageSelection {
     pub manual_root_partition: Option<String>,
     pub manual_home_partition: Option<String>,
     pub manual_swap_partition: Option<String>,
+    pub manual_create_actions: Vec<ManualCreatePartition>,
+    pub manual_delete_partitions: Vec<String>,
     pub format_efi: bool,
     pub format_root: bool,
     pub format_home: bool,
@@ -154,6 +205,115 @@ fn validate_common(selection: &StorageSelection) -> Result<(), String> {
             .ok_or("Select a second disk for /home.")?;
         if home_disk == &selection.install_disk {
             return Err("Home disk must be different from install disk.".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+pub fn managed_disks(selection: &StorageSelection) -> Vec<String> {
+    let mut disks = Vec::new();
+    if !selection.install_disk.trim().is_empty() {
+        disks.push(selection.install_disk.clone());
+    }
+
+    if selection.home_mode == HomeMode::Separate
+        && selection.home_location == HomeLocation::OtherDisk
+        && selection.home_disk.is_some()
+    {
+        let home_disk = selection.home_disk.as_ref().unwrap();
+        if !disks.iter().any(|disk| disk == home_disk) {
+            disks.push(home_disk.clone());
+        }
+    }
+
+    disks
+}
+
+pub fn valid_manual_roles(selection: &StorageSelection) -> Vec<ManualPartitionRole> {
+    let mut roles = vec![ManualPartitionRole::Efi, ManualPartitionRole::Root];
+    if selection.home_mode == HomeMode::Separate {
+        roles.push(ManualPartitionRole::Home);
+    }
+    if selection.swap_mode == SwapMode::Partition {
+        roles.push(ManualPartitionRole::Swap);
+    }
+    roles
+}
+
+fn partition_on_managed_disk(selection: &StorageSelection, partition: &str) -> bool {
+    managed_disks(selection)
+        .iter()
+        .any(|disk| partition.starts_with(disk))
+}
+
+pub fn clear_deleted_partition_assignments(selection: &mut StorageSelection) {
+    let deleted = &selection.manual_delete_partitions;
+    if deleted
+        .iter()
+        .any(|path| selection.manual_efi_partition.as_ref() == Some(path))
+    {
+        selection.manual_efi_partition = None;
+    }
+    if deleted
+        .iter()
+        .any(|path| selection.manual_root_partition.as_ref() == Some(path))
+    {
+        selection.manual_root_partition = None;
+    }
+    if deleted
+        .iter()
+        .any(|path| selection.manual_home_partition.as_ref() == Some(path))
+    {
+        selection.manual_home_partition = None;
+    }
+    if deleted
+        .iter()
+        .any(|path| selection.manual_swap_partition.as_ref() == Some(path))
+    {
+        selection.manual_swap_partition = None;
+    }
+}
+
+fn validate_manual_operations(selection: &StorageSelection) -> Result<(), String> {
+    for action in &selection.manual_create_actions {
+        if !managed_disks(selection).iter().any(|disk| disk == &action.disk) {
+            return Err(format!(
+                "Manual create target {} is outside the selected install/home disks.",
+                action.disk
+            ));
+        }
+        if !valid_manual_roles(selection).iter().any(|role| role == &action.role) {
+            return Err(format!(
+                "Manual create role {} is not valid for the current storage settings.",
+                action.role.label()
+            ));
+        }
+    }
+
+    for path in &selection.manual_delete_partitions {
+        if !partition_on_managed_disk(selection, path) {
+            return Err(format!(
+                "Manual delete target {} is outside the selected install/home disks.",
+                path
+            ));
+        }
+    }
+
+    for path in [
+        selection.manual_efi_partition.as_deref(),
+        selection.manual_root_partition.as_deref(),
+        selection.manual_home_partition.as_deref(),
+        selection.manual_swap_partition.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !partition_on_managed_disk(selection, path) {
+            return Err(format!(
+                "Manual partition {} is outside the selected install/home disks.",
+                path
+            ));
         }
     }
 
@@ -300,6 +460,7 @@ fn resolve_automatic(
     Ok(ResolvedInstallLayout {
         setup_mode: SetupMode::Automatic,
         fs_type: root_fs,
+        managed_disks: managed_disks(selection),
         root_partition,
         efi_partition,
         home_partition,
@@ -308,7 +469,9 @@ fn resolve_automatic(
         mount_actions,
         swap_action,
         disks_to_wipe,
+        partitions_to_delete: Vec::new(),
         partitions_to_create,
+        manual_create_actions: Vec::new(),
     })
 }
 
@@ -316,6 +479,8 @@ fn resolve_manual(
     selection: &StorageSelection,
     root_fs: FilesystemType,
 ) -> Result<ResolvedInstallLayout, String> {
+    validate_manual_operations(selection)?;
+
     let efi_partition = selection
         .manual_efi_partition
         .as_ref()
@@ -418,6 +583,7 @@ fn resolve_manual(
     Ok(ResolvedInstallLayout {
         setup_mode: SetupMode::Manual,
         fs_type: root_fs,
+        managed_disks: managed_disks(selection),
         root_partition,
         efi_partition,
         home_partition,
@@ -426,7 +592,26 @@ fn resolve_manual(
         mount_actions,
         swap_action,
         disks_to_wipe: Vec::new(),
-        partitions_to_create: Vec::new(),
+        partitions_to_delete: selection.manual_delete_partitions.clone(),
+        partitions_to_create: selection
+            .manual_create_actions
+            .iter()
+            .map(|action| {
+                let size = if action.use_remaining {
+                    "remaining space".to_string()
+                } else {
+                    format!("{} GiB", action.size_gib.unwrap_or(0))
+                };
+                format!(
+                    "{}: {} ({}) as {}",
+                    action.disk,
+                    action.path,
+                    size,
+                    action.role.label()
+                )
+            })
+            .collect(),
+        manual_create_actions: selection.manual_create_actions.clone(),
     })
 }
 
@@ -439,6 +624,15 @@ pub fn format_destructive_plan(layout: &ResolvedInstallLayout) -> String {
     } else {
         for disk in &layout.disks_to_wipe {
             lines.push(format!("- {}", disk));
+        }
+    }
+
+    lines.push("Partitions to delete:".to_string());
+    if layout.partitions_to_delete.is_empty() {
+        lines.push("- none".to_string());
+    } else {
+        for partition in &layout.partitions_to_delete {
+            lines.push(format!("- {}", partition));
         }
     }
 
@@ -482,8 +676,9 @@ pub fn format_destructive_plan(layout: &ResolvedInstallLayout) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FilesystemType, HomeLocation, HomeMode, SetupMode, StorageSelection, SwapMode,
-        format_destructive_plan, resolve_layout,
+        FilesystemType, HomeLocation, HomeMode, ManualCreatePartition, ManualPartitionRole,
+        SetupMode, StorageSelection, SwapMode, clear_deleted_partition_assignments,
+        format_destructive_plan, managed_disks, resolve_layout, valid_manual_roles,
     };
 
     fn base_selection() -> StorageSelection {
@@ -501,6 +696,8 @@ mod tests {
             manual_root_partition: None,
             manual_home_partition: None,
             manual_swap_partition: None,
+            manual_create_actions: Vec::new(),
+            manual_delete_partitions: Vec::new(),
             format_efi: true,
             format_root: true,
             format_home: true,
@@ -573,6 +770,74 @@ mod tests {
 
         let err = resolve_layout(&selection).unwrap_err();
         assert!(err.contains("Swap partition must differ"));
+    }
+
+    #[test]
+    fn manual_roles_follow_storage_mode() {
+        let selection = base_selection();
+        assert_eq!(
+            valid_manual_roles(&selection),
+            vec![ManualPartitionRole::Efi, ManualPartitionRole::Root, ManualPartitionRole::Swap]
+        );
+
+        let mut selection = selection;
+        selection.swap_mode = SwapMode::File;
+        selection.home_mode = HomeMode::Separate;
+        assert_eq!(
+            valid_manual_roles(&selection),
+            vec![
+                ManualPartitionRole::Efi,
+                ManualPartitionRole::Root,
+                ManualPartitionRole::Home
+            ]
+        );
+    }
+
+    #[test]
+    fn managed_disks_include_optional_home_disk() {
+        let mut selection = base_selection();
+        selection.home_mode = HomeMode::Separate;
+        selection.home_location = HomeLocation::OtherDisk;
+        selection.home_disk = Some("/dev/sdb".to_string());
+
+        assert_eq!(
+            managed_disks(&selection),
+            vec!["/dev/nvme0n1".to_string(), "/dev/sdb".to_string()]
+        );
+    }
+
+    #[test]
+    fn clearing_deleted_partition_assignments_removes_stale_roles() {
+        let mut selection = base_selection();
+        selection.setup_mode = SetupMode::Manual;
+        selection.manual_efi_partition = Some("/dev/nvme0n1p1".to_string());
+        selection.manual_root_partition = Some("/dev/nvme0n1p2".to_string());
+        selection.manual_delete_partitions = vec!["/dev/nvme0n1p1".to_string()];
+
+        clear_deleted_partition_assignments(&mut selection);
+
+        assert_eq!(selection.manual_efi_partition, None);
+        assert_eq!(selection.manual_root_partition.as_deref(), Some("/dev/nvme0n1p2"));
+    }
+
+    #[test]
+    fn manual_operations_reject_out_of_scope_disks() {
+        let mut selection = base_selection();
+        selection.setup_mode = SetupMode::Manual;
+        selection.swap_mode = SwapMode::File;
+        selection.manual_efi_partition = Some("/dev/nvme0n1p1".to_string());
+        selection.manual_root_partition = Some("/dev/nvme0n1p2".to_string());
+        selection.manual_create_actions.push(ManualCreatePartition {
+            disk: "/dev/sdz".to_string(),
+            partition_number: 1,
+            role: ManualPartitionRole::Root,
+            size_gib: None,
+            use_remaining: true,
+            path: "/dev/sdz1".to_string(),
+        });
+
+        let err = resolve_layout(&selection).unwrap_err();
+        assert!(err.contains("outside the selected install/home disks"));
     }
 
     #[test]
