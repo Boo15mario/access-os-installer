@@ -54,3 +54,4 @@ git
 bluez
 bluez-utils
 cups
+qemu-full

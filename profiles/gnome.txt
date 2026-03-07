@@ -2,3 +2,12 @@ gnome
 gnome-tweaks
 gdm
 breeze-gtk
+orca
+firefox
+gnome-extra
+lxterminal
+gedit
+caja
+
+
+
