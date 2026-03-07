@@ -1,7 +1,6 @@
 use crate::app::constants::DOTFILES_REPO_URL;
 use crate::app::state::SharedState;
 use crate::backend;
-use crate::backend::config_engine::DesktopEnv;
 use crate::mappers::storage::storage_selection_from_state;
 use crate::services::log::append_log_line;
 use crate::services::mirror::apply_mirror_region;
@@ -254,16 +253,6 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
             append_log_line(&log_label, "SUCCESS: system configured.");
 
-            if de == DesktopEnv::Gnome {
-                progress_label.set_label("Configuring GNOME...");
-                append_log_line(&log_label, "INFO: applying GNOME theme and extensions.");
-                if let Err(e) = backend::install_worker::configure_gnome(&username) {
-                    append_log_line(&log_label, &format!("WARN: GNOME config failed (non-fatal): {}", e));
-                } else {
-                    append_log_line(&log_label, "SUCCESS: GNOME configured.");
-                }
-            }
-
             state.borrow_mut().password.clear();
 
             append_log_line(&log_label, "SUCCESS: installation finished.");
@@ -413,16 +402,6 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
             append_log_line(&log_label, "SUCCESS: system configured.");
 
-            if install_config.desktop_env == DesktopEnv::Gnome {
-                progress_label.set_label("Configuring GNOME...");
-                append_log_line(&log_label, "INFO: applying GNOME theme and extensions.");
-                if let Err(e) = backend::install_worker::configure_gnome(&username) {
-                    append_log_line(&log_label, &format!("WARN: GNOME config failed (non-fatal): {}", e));
-                } else {
-                    append_log_line(&log_label, "SUCCESS: GNOME configured.");
-                }
-            }
-
             state.borrow_mut().password.clear();
 
             append_log_line(&log_label, "SUCCESS: installation finished after retry.");
@@ -515,18 +494,6 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 return;
             }
             append_log_line(&log_label, "SUCCESS: system configured.");
-
-            let username = install_config.username.clone();
-
-            if install_config.desktop_env == DesktopEnv::Gnome {
-                progress_label.set_label("Configuring GNOME...");
-                append_log_line(&log_label, "INFO: applying GNOME theme and extensions.");
-                if let Err(e) = backend::install_worker::configure_gnome(&username) {
-                    append_log_line(&log_label, &format!("WARN: GNOME config failed (non-fatal): {}", e));
-                } else {
-                    append_log_line(&log_label, "SUCCESS: GNOME configured.");
-                }
-            }
 
             state.borrow_mut().password.clear();
 

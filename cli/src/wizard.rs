@@ -629,13 +629,6 @@ impl Wizard {
         println!("7/7 Configuring system...");
         installer_core::backend::install_worker::configure_system(&config, &root_partition)?;
 
-        if de == DesktopEnv::Gnome {
-            println!("Extra: configuring GNOME (non-fatal)...");
-            if let Err(err) = installer_core::backend::install_worker::configure_gnome(&config.username) {
-                println!("WARN: GNOME config failed (non-fatal): {}", err);
-            }
-        }
-
         // Best-effort: clear password in memory after install.
         self.state.password.clear();
 
