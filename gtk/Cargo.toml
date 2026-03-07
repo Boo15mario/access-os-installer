@@ -1,6 +1,6 @@
 [package]
 name = "access-os-installer"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "A GTK4 based installer for access-OS"
 repository = "https://github.com/Boo15mario/access-os-installer"

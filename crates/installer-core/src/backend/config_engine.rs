@@ -139,6 +139,7 @@ fn profile_search_paths() -> Vec<PathBuf> {
     if let Ok(cwd) = env::current_dir() {
         paths.push(cwd.join("profiles"));
     }
+    paths.push(PathBuf::from("/usr/share/access-os-installer/profiles"));
     let manifest_profiles = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

@@ -6,6 +6,7 @@
 - `crates/installer-core/`: shared backend library (disk/network/preflight/storage planning + services).
 - `cli/`: line-based CLI wizard intended to work well with screen readers (no curses/TUI).
 - `gtk/`: GTK4 installer app (wizard UI + accessibility helpers). `access-os-installer.desktop` targets this binary.
+- `packaging/install-access`: packaged launcher that elevates to root and execs the real CLI binary.
 - `profiles/`: plain text package lists for base, desktop, kernel, and Nvidia profiles.
 - `assets/`: runtime assets (e.g. `assets/login.wav`, `assets/access-os-installer.svg`).
 - `docs/plans/`: design docs and implementation plans for major changes.
@@ -22,6 +23,7 @@ cargo run -p access-os-installer            # GTK; requires a display session
 cargo fmt --all                             # format (rustfmt)
 cargo clippy --workspace --all-targets      # lint (Clippy)
 cargo build -p access-os-installer --release
+makepkg -f                                  # build Arch package, if makepkg is installed
 ```
 
 Notes:

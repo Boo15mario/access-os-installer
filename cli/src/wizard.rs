@@ -134,7 +134,7 @@ impl Wizard {
         self.refresh_network_status();
 
         println!();
-        println!("Access OS Installer (CLI)");
+        println!("Access OS Installer (CLI) v{}", env!("CARGO_PKG_VERSION"));
         println!("Type `next` to begin, or `quit` to exit.");
         println!("Network: {}", self.network_status_label());
         println!("Commands always available: next, back, help, quit");

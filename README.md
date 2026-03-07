@@ -33,6 +33,15 @@ cargo fmt --all
 cargo clippy --workspace --all-targets
 ```
 
+## Packaging
+
+For Arch-based packaging, this repo now includes a `PKGBUILD` for the CLI-only package:
+
+- package name: `access-os-installer-cli`
+- launcher command: `install-access`
+- real binary path: `/usr/share/access-os-installer/install-access-real`
+- profile path: `/usr/share/access-os-installer/profiles/`
+
 ## Requirements
 
 The real install path expects an Arch-based live environment with tools such as `pacstrap`, `arch-chroot`, `sgdisk`, filesystem format tools (e.g. `mkfs.fat`/`mkfs.ext4`), and networking via NetworkManager (`nmcli`).
