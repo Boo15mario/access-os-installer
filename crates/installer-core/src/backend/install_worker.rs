@@ -6,6 +6,8 @@ use std::process::{Command, Stdio};
 use super::config_engine::{self, DesktopEnv, KernelVariant};
 use super::emit_progress;
 
+const PIPEWIRE_USER_SERVICES: &[&str] = &["pipewire", "pipewire-pulse", "wireplumber"];
+
 const GNOME_EXTENSIONS: &[(&str, &str)] = &[
     ("no-overview@fthx", "https://github.com/fthx/no-overview"),
     (
@@ -249,6 +251,15 @@ pub fn configure_system(
         run_chroot(
             &["systemctl", "enable", service],
             &format!("Failed to enable {}", service),
+        )?;
+    }
+
+    // Enable PipeWire audio user services for all users
+    emit_progress(progress, "Enabling PipeWire audio services");
+    for service in PIPEWIRE_USER_SERVICES {
+        run_chroot(
+            &["systemctl", "--global", "enable", service],
+            &format!("Failed to enable {} user service", service),
         )?;
     }
 
