@@ -40,6 +40,7 @@ os-prober
 pacman-contrib
 python
 python-pip
+uv
 reflector
 ruby
 rust
@@ -55,11 +56,18 @@ git
 bluez
 bluez-utils
 cups
+ffmpeg
+gstreamer
+gst-libav
+gst-plugins-bad
+gst-plugins-base
+gst-plugin-pipewire
+gst-plugins-good
+gst-plugins-ugly
 pipewire
 pipewire-alsa
 pipewire-audio
 pipewire-jack
 pipewire-pulse
 wireplumber
-gst-plugin-pipewire
 qemu-full

@@ -228,15 +228,14 @@ pub fn full_package_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        DesktopEnv, KernelVariant, desktop_profile_packages, full_package_list, merge_packages,
-        parse_package_list,
+        desktop_profile_packages, full_package_list, load_profile_packages, merge_packages,
+        parse_package_list, DesktopEnv, KernelVariant,
     };
 
     #[test]
     fn parser_ignores_comments_and_blank_lines() {
-        let packages = parse_package_list(
-            "\n# comment\nbase\n\nnetworkmanager\n  # indented comment\nvim\n",
-        );
+        let packages =
+            parse_package_list("\n# comment\nbase\n\nnetworkmanager\n  # indented comment\nvim\n");
         assert_eq!(packages, vec!["base", "networkmanager", "vim"]);
     }
 
@@ -254,19 +253,47 @@ mod tests {
     fn desktop_and_kernel_map_to_expected_files() {
         assert_eq!(DesktopEnv::Gnome.profile_filename(), "gnome.txt");
         assert_eq!(DesktopEnv::Server.profile_filename(), "server.txt");
-        assert_eq!(KernelVariant::Standard.profile_filename(), "kernel-standard.txt");
-        assert_eq!(KernelVariant::Hardened.profile_filename(), "kernel-hardened.txt");
+        assert_eq!(
+            KernelVariant::Standard.profile_filename(),
+            "kernel-standard.txt"
+        );
+        assert_eq!(
+            KernelVariant::Hardened.profile_filename(),
+            "kernel-hardened.txt"
+        );
     }
 
     #[test]
     fn desktop_profile_packages_load_from_text_file() {
         let packages = desktop_profile_packages(&DesktopEnv::Server).unwrap();
-        assert_eq!(packages, vec!["docker", "docker-compose", "tailscale", "openssh"]);
+        assert_eq!(
+            packages,
+            vec!["docker", "docker-compose", "tailscale", "openssh"]
+        );
+    }
+
+    #[test]
+    fn base_profile_includes_uv_and_multimedia_support() {
+        let packages = load_profile_packages("base.txt").unwrap();
+        for package in [
+            "uv",
+            "ffmpeg",
+            "gstreamer",
+            "gst-libav",
+            "gst-plugins-bad",
+            "gst-plugins-base",
+            "gst-plugin-pipewire",
+            "gst-plugins-good",
+            "gst-plugins-ugly",
+        ] {
+            assert!(packages.contains(&package.to_string()), "missing {package}");
+        }
     }
 
     #[test]
     fn full_package_list_merges_base_desktop_kernel_and_nvidia() {
-        let packages = full_package_list(&DesktopEnv::Gnome, &KernelVariant::Standard, true).unwrap();
+        let packages =
+            full_package_list(&DesktopEnv::Gnome, &KernelVariant::Standard, true).unwrap();
         assert!(packages.contains(&"base".to_string()));
         assert!(packages.contains(&"gnome".to_string()));
         assert!(packages.contains(&"linux".to_string()));
