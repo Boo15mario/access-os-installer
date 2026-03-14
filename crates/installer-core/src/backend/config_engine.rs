@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn base_profile_includes_uv_and_multimedia_support() {
+    fn base_profile_includes_firmware_and_multimedia_support() {
         let packages = load_profile_packages("base.txt").unwrap();
         for package in [
             "uv",
@@ -285,6 +285,11 @@ mod tests {
             "gst-plugin-pipewire",
             "gst-plugins-good",
             "gst-plugins-ugly",
+            "linux-firmware",
+            "linux-firmware-marvell",
+            "linux-firmware-qcom",
+            "sof-firmware",
+            "alsa-firmware",
         ] {
             assert!(packages.contains(&package.to_string()), "missing {package}");
         }

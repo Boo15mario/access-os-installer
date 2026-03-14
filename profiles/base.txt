@@ -25,6 +25,7 @@ intel-ucode
 iptables-nft
 linux-firmware
 linux-firmware-marvell
+linux-firmware-qcom
 lvm2
 man-db
 man-pages
