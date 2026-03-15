@@ -6,8 +6,7 @@ use crate::services::log::append_log_line;
 use crate::services::mirror::apply_mirror_region;
 use crate::services::mount::prepare_install_targets;
 use crate::ui::common::a11y::{
-    append_list_row, apply_button_role, build_list_box, build_mnemonic_label,
-    select_list_box_index,
+    append_list_row, apply_button_role, build_list_box, build_mnemonic_label, select_list_box_index,
 };
 use crate::ui::common::layout::padded_box;
 use gtk4::prelude::*;
@@ -21,16 +20,20 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .label("Step 8: Installation Progress")
         .margin_bottom(24)
         .build();
-    let fs_list = build_list_box(
-        "Root Filesystem",
-        "Select the root filesystem type.",
-    );
+    let fs_list = build_list_box("Root Filesystem", "Select the root filesystem type.");
     append_list_row(&fs_list, "xfs");
     append_list_row(&fs_list, "ext4");
-    let initial_fs_index = if state.borrow().fs_type == "ext4" { 1 } else { 0 };
+    let initial_fs_index = if state.borrow().fs_type == "ext4" {
+        1
+    } else {
+        0
+    };
     select_list_box_index(&fs_list, initial_fs_index);
     let swap_hint = Label::builder()
-        .label(&format!("Suggested swap size: {} GiB", state.borrow().swap_gb))
+        .label(&format!(
+            "Suggested swap size: {} GiB",
+            state.borrow().swap_gb
+        ))
         .halign(Align::Start)
         .wrap(true)
         .build();
@@ -39,7 +42,11 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
         .halign(Align::Start)
         .wrap(true)
         .build();
-    let log_label = Label::builder().label("").halign(Align::Start).wrap(true).build();
+    let log_label = Label::builder()
+        .label("")
+        .halign(Align::Start)
+        .wrap(true)
+        .build();
     let start_btn = Button::builder().label("Start Installation").build();
     let retry_pacstrap_btn = Button::builder().label("Retry pacstrap").build();
     let retry_config_btn = Button::builder().label("Retry configuration").build();
@@ -102,7 +109,8 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             let layout = match crate::backend::storage_plan::resolve_layout(&selection) {
                 Ok(layout) => layout,
                 Err(e) => {
-                    progress_label.set_label(&format!("Installation failed: invalid disk setup: {}", e));
+                    progress_label
+                        .set_label(&format!("Installation failed: invalid disk setup: {}", e));
                     append_log_line(&log_label, &format!("FAIL: invalid disk setup: {}", e));
                     btn.set_sensitive(true);
                     return;
@@ -112,15 +120,17 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
 
             if fs_type != "xfs" && fs_type != "ext4" {
                 progress_label.set_label("Installation failed: unsupported filesystem selection.");
-                append_log_line(&log_label, &format!("FAIL: unsupported filesystem '{}'.", fs_type));
+                append_log_line(
+                    &log_label,
+                    &format!("FAIL: unsupported filesystem '{}'.", fs_type),
+                );
                 btn.set_sensitive(true);
                 return;
             }
 
             if password.is_empty() {
-                progress_label.set_label(
-                    "Installation failed: password is empty. Go back and re-enter it.",
-                );
+                progress_label
+                    .set_label("Installation failed: password is empty. Go back and re-enter it.");
                 append_log_line(
                     &log_label,
                     "FAIL: missing password in install state; return to user settings.",
@@ -162,7 +172,9 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                     DOTFILES_REPO_URL
                 ),
             );
-            if let Err(e) = backend::install_worker::stage_system_config_repo(DOTFILES_REPO_URL, None) {
+            if let Err(e) =
+                backend::install_worker::stage_system_config_repo(DOTFILES_REPO_URL, None)
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 btn.set_sensitive(true);
@@ -190,7 +202,10 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             if let Err(e) = apply_mirror_region(&mirror_region) {
                 append_log_line(
                     &log_label,
-                    &format!("WARN: mirror region apply failed (non-fatal): {}. Continuing.", e),
+                    &format!(
+                        "WARN: mirror region apply failed (non-fatal): {}. Continuing.",
+                        e
+                    ),
                 );
             } else {
                 append_log_line(&log_label, "SUCCESS: mirror region applied.");
@@ -215,7 +230,14 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 removable_media,
             };
 
-            if let Err(e) = backend::install_worker::run_pacstrap(&install_config, None) {
+            let backend_progress = |message: &str| {
+                progress_label.set_label(message);
+                append_log_line(&log_label, &format!("INFO: {}", message));
+            };
+
+            if let Err(e) =
+                backend::install_worker::run_pacstrap(&install_config, Some(&backend_progress))
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_pacstrap_btn.set_visible(true);
@@ -224,7 +246,8 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
             append_log_line(&log_label, "SUCCESS: pacstrap completed.");
 
-            if let Err(e) = backend::disk_manager::setup_swap_file(&layout, None) {
+            if let Err(e) = backend::disk_manager::setup_swap_file(&layout, Some(&backend_progress))
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -233,7 +256,7 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
             progress_label.set_label("Generating fstab...");
             append_log_line(&log_label, "INFO: generating fstab.");
-            if let Err(e) = backend::install_worker::generate_fstab(None) {
+            if let Err(e) = backend::install_worker::generate_fstab(Some(&backend_progress)) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -243,8 +266,15 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             append_log_line(&log_label, "SUCCESS: fstab generated.");
 
             progress_label.set_label("Configuring system...");
-            append_log_line(&log_label, "INFO: configuring timezone, locale, bootloader, user.");
-            if let Err(e) = backend::install_worker::configure_system(&install_config, &root_partition, None) {
+            append_log_line(
+                &log_label,
+                "INFO: configuring timezone, locale, bootloader, user.",
+            );
+            if let Err(e) = backend::install_worker::configure_system(
+                &install_config,
+                &root_partition,
+                Some(&backend_progress),
+            ) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -292,7 +322,10 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 progress_label.set_label(
                     "Installation failed: storage layout is unavailable. Return to review.",
                 );
-                append_log_line(&log_label, "FAIL: retry requested without resolved storage layout.");
+                append_log_line(
+                    &log_label,
+                    "FAIL: retry requested without resolved storage layout.",
+                );
                 btn.set_sensitive(true);
                 return;
             };
@@ -302,7 +335,10 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 progress_label.set_label(
                     "Installation failed: password is unavailable. Return to user settings.",
                 );
-                append_log_line(&log_label, "FAIL: retry requested but no password is cached.");
+                append_log_line(
+                    &log_label,
+                    "FAIL: retry requested but no password is cached.",
+                );
                 btn.set_sensitive(true);
                 return;
             };
@@ -334,7 +370,9 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                     DOTFILES_REPO_URL
                 ),
             );
-            if let Err(e) = backend::install_worker::stage_system_config_repo(DOTFILES_REPO_URL, None) {
+            if let Err(e) =
+                backend::install_worker::stage_system_config_repo(DOTFILES_REPO_URL, None)
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 btn.set_sensitive(true);
@@ -358,15 +396,25 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             if let Err(e) = apply_mirror_region(&mirror_region) {
                 append_log_line(
                     &log_label,
-                    &format!("WARN: mirror region apply failed (non-fatal): {}. Continuing.", e),
+                    &format!(
+                        "WARN: mirror region apply failed (non-fatal): {}. Continuing.",
+                        e
+                    ),
                 );
             } else {
                 append_log_line(&log_label, "SUCCESS: mirror region applied.");
             }
 
+            let backend_progress = |message: &str| {
+                progress_label.set_label(message);
+                append_log_line(&log_label, &format!("INFO: {}", message));
+            };
+
             progress_label.set_label("Retrying pacstrap...");
             append_log_line(&log_label, "INFO: retrying pacstrap.");
-            if let Err(e) = backend::install_worker::run_pacstrap(&install_config, None) {
+            if let Err(e) =
+                backend::install_worker::run_pacstrap(&install_config, Some(&backend_progress))
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 btn.set_sensitive(true);
@@ -374,7 +422,8 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
             append_log_line(&log_label, "SUCCESS: pacstrap completed.");
 
-            if let Err(e) = backend::disk_manager::setup_swap_file(&layout, None) {
+            if let Err(e) = backend::disk_manager::setup_swap_file(&layout, Some(&backend_progress))
+            {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -383,7 +432,7 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             }
 
             progress_label.set_label("Generating fstab...");
-            if let Err(e) = backend::install_worker::generate_fstab(None) {
+            if let Err(e) = backend::install_worker::generate_fstab(Some(&backend_progress)) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -393,7 +442,11 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
             append_log_line(&log_label, "SUCCESS: fstab generated.");
 
             progress_label.set_label("Configuring system...");
-            if let Err(e) = backend::install_worker::configure_system(&install_config, &root_partition, None) {
+            if let Err(e) = backend::install_worker::configure_system(
+                &install_config,
+                &root_partition,
+                Some(&backend_progress),
+            ) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 retry_config_btn.set_visible(true);
@@ -451,7 +504,10 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 progress_label.set_label(
                     "Installation failed: password is unavailable. Return to user settings.",
                 );
-                append_log_line(&log_label, "FAIL: retry requested but no password is cached.");
+                append_log_line(
+                    &log_label,
+                    "FAIL: retry requested but no password is cached.",
+                );
                 btn.set_sensitive(true);
                 return;
             };
@@ -475,9 +531,14 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
                 removable_media,
             };
 
+            let backend_progress = |message: &str| {
+                progress_label.set_label(message);
+                append_log_line(&log_label, &format!("INFO: {}", message));
+            };
+
             progress_label.set_label("Retrying fstab generation...");
             append_log_line(&log_label, "INFO: retrying fstab generation.");
-            if let Err(e) = backend::install_worker::generate_fstab(None) {
+            if let Err(e) = backend::install_worker::generate_fstab(Some(&backend_progress)) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 btn.set_sensitive(true);
@@ -487,7 +548,11 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
 
             progress_label.set_label("Retrying system configuration...");
             append_log_line(&log_label, "INFO: retrying system configuration.");
-            if let Err(e) = backend::install_worker::configure_system(&install_config, &root_partition, None) {
+            if let Err(e) = backend::install_worker::configure_system(
+                &install_config,
+                &root_partition,
+                Some(&backend_progress),
+            ) {
                 progress_label.set_label(&format!("Installation failed: {}", e));
                 append_log_line(&log_label, &format!("FAIL: {}", e));
                 btn.set_sensitive(true);
@@ -497,7 +562,10 @@ pub fn build_install_step(stack: &Stack, state: SharedState) -> Box {
 
             state.borrow_mut().password.clear();
 
-            append_log_line(&log_label, "SUCCESS: installation finished after config retry.");
+            append_log_line(
+                &log_label,
+                "SUCCESS: installation finished after config retry.",
+            );
             *install_password.borrow_mut() = None;
             progress_label.set_label("Installation complete. Opening completion options...");
             stack.set_visible_child_name("complete");

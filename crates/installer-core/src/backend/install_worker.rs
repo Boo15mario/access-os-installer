@@ -343,7 +343,7 @@ fn install_audio_init_assets() -> Result<(), String> {
 
 pub fn run_pacstrap(
     config: &InstallConfig,
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     emit_progress(progress, "Installing packages with pacstrap");
     let packages =
@@ -353,7 +353,7 @@ pub fn run_pacstrap(
     run_command("pacstrap", &args, "pacstrap failed")
 }
 
-pub fn generate_fstab(progress: Option<&super::ProgressCallback>) -> Result<(), String> {
+pub fn generate_fstab(progress: Option<&super::ProgressCallback<'_>>) -> Result<(), String> {
     emit_progress(progress, "Generating fstab");
     let output = Command::new("genfstab")
         .args(&["-U", "/mnt"])
@@ -374,7 +374,7 @@ pub fn generate_fstab(progress: Option<&super::ProgressCallback>) -> Result<(), 
 pub fn configure_system(
     config: &InstallConfig,
     root_partition: &str,
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     // 1. Timezone
     emit_progress(progress, "Setting timezone");
@@ -649,7 +649,7 @@ accent-color='orange'\n\
 
 pub fn stage_system_config_repo(
     url: &str,
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     if url.is_empty() {
         return Ok(());
@@ -673,7 +673,7 @@ pub fn stage_system_config_repo(
 }
 
 pub fn overlay_staged_config_to_target(
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     let repo = Path::new(STAGED_CONFIG_REPO_PATH);
     if !repo.exists() {

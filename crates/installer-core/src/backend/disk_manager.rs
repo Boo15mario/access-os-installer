@@ -17,7 +17,10 @@ fn run_command(program: &str, args: &[&str], context: &str) -> Result<(), String
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
-            Err(format!("{}: command exited with {}", context, output.status))
+            Err(format!(
+                "{}: command exited with {}",
+                context, output.status
+            ))
         } else {
             Err(format!("{}: {}", context, stderr))
         }
@@ -83,7 +86,9 @@ pub fn get_block_devices() -> Result<Vec<BlockDevice>, String> {
     let decoded: LsblkOutput = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Failed to parse lsblk JSON: {}", e))?;
 
-    Ok(decoded.blockdevices.into_iter()
+    Ok(decoded
+        .blockdevices
+        .into_iter()
         .filter(|d| d.device_type == "disk")
         .collect())
 }
@@ -148,10 +153,16 @@ pub fn get_partitions_for_disk(disk_path: &str) -> Result<Vec<PartitionInfo>, St
         .collect())
 }
 
-pub fn get_partitions_for_managed_disks(allowed_disks: &[String]) -> Result<Vec<PartitionInfo>, String> {
+pub fn get_partitions_for_managed_disks(
+    allowed_disks: &[String],
+) -> Result<Vec<PartitionInfo>, String> {
     Ok(get_partition_devices()?
         .into_iter()
-        .filter(|partition| allowed_disks.iter().any(|disk| disk == &partition.parent_disk))
+        .filter(|partition| {
+            allowed_disks
+                .iter()
+                .any(|disk| disk == &partition.parent_disk)
+        })
         .collect())
 }
 
@@ -209,7 +220,10 @@ pub fn next_available_partition_number(
     pending_deletes: &[String],
 ) -> Result<u8, String> {
     let mut used = Vec::new();
-    for partition in existing.iter().filter(|partition| partition.parent_disk == disk) {
+    for partition in existing
+        .iter()
+        .filter(|partition| partition.parent_disk == disk)
+    {
         if pending_deletes.iter().any(|path| path == &partition.path) {
             continue;
         }
@@ -240,7 +254,11 @@ pub fn create_manual_partition(action: &ManualCreatePartition) -> Result<(), Str
         format!("+{}G", action.size_gib.unwrap_or(0))
     };
     let type_code = format!("{}:{}", action.partition_number, action.role.gpt_type());
-    let label = format!("{}:{}", action.partition_number, action.role.label().to_lowercase());
+    let label = format!(
+        "{}:{}",
+        action.partition_number,
+        action.role.label().to_lowercase()
+    );
 
     run_command(
         "sgdisk",
@@ -355,13 +373,21 @@ pub fn execute_partitioning(drive: &str, swap_gb: u64, fs_type: &str) -> Result<
 
     // 4. Format partitions
     // EFI
-    run_command("mkfs.fat", &["-F", "32", &p1], "Failed to format EFI partition")?;
+    run_command(
+        "mkfs.fat",
+        &["-F", "32", &p1],
+        "Failed to format EFI partition",
+    )?;
     // Swap
     run_command("mkswap", &[&p2], "Failed to initialize swap partition")?;
     run_command("swapon", &[&p2], "Failed to activate swap partition")?;
     // Root
     if fs_type == "xfs" {
-        run_command("mkfs.xfs", &["-f", &p3], "Failed to format root partition as XFS")?;
+        run_command(
+            "mkfs.xfs",
+            &["-f", &p3],
+            "Failed to format root partition as XFS",
+        )?;
     } else {
         run_command(
             "mkfs.ext4",
@@ -452,7 +478,7 @@ fn ensure_mount_target(target: &str) -> Result<(), String> {
 
 pub fn execute_layout(
     layout: &ResolvedInstallLayout,
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     emit_progress(progress, "Clearing previous mounts and swap state");
     run_optional_command("swapoff", &["/mnt/swapfile"], "Swapoff /mnt/swapfile");
@@ -472,7 +498,11 @@ pub fn execute_layout(
     for action in &layout.manual_create_actions {
         emit_progress(
             progress,
-            &format!("Creating {} partition on {}", action.role.label(), action.disk),
+            &format!(
+                "Creating {} partition on {}",
+                action.role.label(),
+                action.disk
+            ),
         );
         create_manual_partition(action)?;
     }
@@ -503,7 +533,10 @@ pub fn execute_layout(
     let mut mounts = layout.mount_actions.clone();
     mounts.sort_by_key(|mount| mount.target.len());
     for mount in mounts {
-        emit_progress(progress, &format!("Mounting {} at {}", mount.device, mount.target));
+        emit_progress(
+            progress,
+            &format!("Mounting {} at {}", mount.device, mount.target),
+        );
         ensure_mount_target(&mount.target)?;
         run_command(
             "mount",
@@ -517,7 +550,7 @@ pub fn execute_layout(
 
 pub fn setup_swap_file(
     layout: &ResolvedInstallLayout,
-    progress: Option<&super::ProgressCallback>,
+    progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     let Some(SwapAction::File { path, size_mb }) = &layout.swap_action else {
         return Ok(());
@@ -548,9 +581,9 @@ pub fn setup_swap_file(
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockDevice, ManualCreatePartition, PartitionInfo, RmFlag, get_internal_block_devices,
-        get_partitions_for_managed_disks, is_internal_device, next_available_partition_number,
-        partition_belongs_to_managed_disks, partition_device_path,
+        get_internal_block_devices, get_partitions_for_managed_disks, is_internal_device,
+        next_available_partition_number, partition_belongs_to_managed_disks, partition_device_path,
+        BlockDevice, ManualCreatePartition, PartitionInfo, RmFlag,
     };
     use crate::backend::storage_plan::ManualPartitionRole;
 
@@ -658,7 +691,10 @@ mod tests {
     #[test]
     fn managed_disk_check_handles_nvme_and_sata() {
         let allowed = vec!["/dev/nvme0n1".to_string(), "/dev/sda".to_string()];
-        assert!(partition_belongs_to_managed_disks("/dev/nvme0n1p4", &allowed));
+        assert!(partition_belongs_to_managed_disks(
+            "/dev/nvme0n1p4",
+            &allowed
+        ));
         assert!(partition_belongs_to_managed_disks("/dev/sda2", &allowed));
         assert!(!partition_belongs_to_managed_disks("/dev/sdb1", &allowed));
     }

@@ -3,7 +3,7 @@ use std::process::Command;
 
 pub fn prepare_install_targets(
     layout: &ResolvedInstallLayout,
-    progress: Option<&crate::backend::ProgressCallback>,
+    progress: Option<&crate::backend::ProgressCallback<'_>>,
 ) -> Result<(), String> {
     crate::backend::disk_manager::execute_layout(layout, progress)
 }
