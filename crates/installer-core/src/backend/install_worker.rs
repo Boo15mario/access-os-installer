@@ -189,14 +189,7 @@ const WIREPLUMBER_AUDIO_POLICY: &str = r#"monitor.alsa.rules = [
 ]
 "#;
 
-const PIPEWIRE_PULSE_CONFIG: &str = r#"pulse.properties = {
-    server.address = [
-        "unix:native"
-        "unix:/tmp/pulse.sock"
-    ]
-}
-
-pulse.rules = [
+const PIPEWIRE_PULSE_CONFIG: &str = r#"pulse.rules = [
     {
         matches = [ { application.name = "~speech-dispatcher*" } ]
         actions = {
@@ -207,11 +200,6 @@ pulse.rules = [
         }
     }
 ]
-"#;
-
-const PULSE_CLIENT_CONFIG: &str = r#"# Configured for PipeWire socket access.
-default-server = unix:/tmp/pulse.sock
-autospawn = no
 "#;
 
 const GNOME_EXTENSIONS: &[(&str, &str)] = &[
@@ -331,12 +319,10 @@ fn install_audio_init_assets() -> Result<(), String> {
         .map_err(|e| format!("Failed to write PipeWire Pulse config: {}", e))?;
 
     let pulse_client_config_path = Path::new(PULSE_CLIENT_CONFIG_PATH);
-    if let Some(parent) = pulse_client_config_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create Pulse client config directory: {}", e))?;
+    if pulse_client_config_path.exists() {
+        fs::remove_file(pulse_client_config_path)
+            .map_err(|e| format!("Failed to remove stale Pulse client config: {}", e))?;
     }
-    fs::write(pulse_client_config_path, PULSE_CLIENT_CONFIG)
-        .map_err(|e| format!("Failed to write Pulse client config: {}", e))?;
 
     Ok(())
 }
@@ -711,4 +697,15 @@ pub fn overlay_staged_config_to_target(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PIPEWIRE_PULSE_CONFIG;
+
+    #[test]
+    fn pipewire_pulse_config_does_not_force_shared_socket() {
+        assert!(!PIPEWIRE_PULSE_CONFIG.contains("/tmp/pulse.sock"));
+        assert!(!PIPEWIRE_PULSE_CONFIG.contains("default-server"));
+    }
 }
