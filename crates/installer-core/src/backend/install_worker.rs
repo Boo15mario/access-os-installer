@@ -11,6 +11,12 @@ const PIPEWIRE_USER_SERVICES: &[&str] = &["pipewire", "pipewire-pulse", "wireplu
 const AUDIO_INIT_SERVICE: &str = "access-os-audio-init.service";
 const AUDIO_INIT_SCRIPT_PATH: &str = "/mnt/usr/local/bin/access-os-audio-init";
 const AUDIO_INIT_SERVICE_PATH: &str = "/mnt/etc/systemd/system/access-os-audio-init.service";
+const AUDIO_INIT_ASOUND_TEMPLATE_PATH: &str = "/mnt/usr/local/share/access-os-audio/asound.conf.in";
+const WIREPLUMBER_AUDIO_POLICY_PATH: &str =
+    "/mnt/etc/wireplumber/wireplumber.conf.d/50-access-os-audio.conf";
+const PIPEWIRE_PULSE_CONFIG_PATH: &str =
+    "/mnt/etc/pipewire/pipewire-pulse.conf.d/50-access-os-audio.conf";
+const PULSE_CLIENT_CONFIG_PATH: &str = "/mnt/etc/pulse/client.conf";
 
 const AUDIO_INIT_SCRIPT: &str = r#"#!/usr/bin/env bash
 set -u
@@ -23,6 +29,16 @@ card_indices() {
     if [[ -f /proc/asound/cards ]]; then
         sed -n -e 's/^[[:space:]]*\([0-7]\)[[:space:]].*/\1/p' /proc/asound/cards
     fi
+}
+
+list_non_pcsp_cards() {
+    local card cardfile
+    for card in $(card_indices); do
+        cardfile="/proc/asound/card${card}/id"
+        if [[ -r "$cardfile" && -f "$cardfile" && "$(<"$cardfile")" != "pcsp" ]]; then
+            echo "$card"
+        fi
+    done
 }
 
 set_level() {
@@ -82,8 +98,21 @@ init_card() {
     set_level "$card" "Digital" "80%"
 }
 
+set_default_card() {
+    local card="$1"
+    local template="/usr/local/share/access-os-audio/asound.conf.in"
+
+    if [[ ! -f "$template" ]]; then
+        log "ASound template missing; skipping default card selection"
+        return 0
+    fi
+
+    sed -e "s/%card%/$card/g" "$template" >/etc/asound.conf
+    log "Configured ALSA default card ${card} in /etc/asound.conf"
+}
+
 main() {
-    local card found=0
+    local card found=0 selected_card=""
     for card in $(card_indices); do
         found=1
         log "Initializing ALSA controls on card ${card}"
@@ -93,6 +122,17 @@ main() {
     if [[ "$found" -eq 0 ]]; then
         log "No ALSA cards detected during audio initialization"
         return 0
+    fi
+
+    for card in $(list_non_pcsp_cards); do
+        selected_card="$card"
+        break
+    done
+
+    if [[ -n "$selected_card" ]]; then
+        set_default_card "$selected_card"
+    else
+        log "No non-pcsp ALSA cards detected for default device selection"
     fi
 
     if alsactl store >/dev/null 2>&1; then
@@ -116,7 +156,62 @@ Type=oneshot
 ExecStart=/usr/local/bin/access-os-audio-init
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sound.target
+"#;
+
+const AUDIO_INIT_ASOUND_TEMPLATE: &str = r#"defaults.ctl.card %card%;
+defaults.pcm.card %card%;
+"#;
+
+const WIREPLUMBER_AUDIO_POLICY: &str = r#"monitor.alsa.rules = [
+  {
+    matches = [
+      { device.name = "~alsa_card.*" }
+    ]
+    actions = {
+      update-props = {
+        session.suspend-timeout-seconds = 0
+        api.alsa.disable-power-save = true
+      }
+    }
+  }
+  {
+    matches = [
+      { node.name = "~alsa_input.*" }
+      { node.name = "~alsa_output.*" }
+    ]
+    actions = {
+      update-props = {
+        session.suspend-timeout-seconds = 0
+      }
+    }
+  }
+]
+"#;
+
+const PIPEWIRE_PULSE_CONFIG: &str = r#"pulse.properties = {
+    server.address = [
+        "unix:native"
+        "unix:/tmp/pulse.sock"
+    ]
+}
+
+pulse.rules = [
+    {
+        matches = [ { application.name = "~speech-dispatcher*" } ]
+        actions = {
+            update-props = {
+                pulse.min.req = 1024/48000
+                pulse.min.quantum = 1024/48000
+            }
+        }
+    }
+]
+"#;
+
+const PULSE_CLIENT_CONFIG: &str = r#"# Configured for PipeWire socket access.
+default-server = unix:/tmp/pulse.sock
+autospawn = no
 "#;
 
 const GNOME_EXTENSIONS: &[(&str, &str)] = &[
@@ -210,6 +305,38 @@ fn install_audio_init_assets() -> Result<(), String> {
     }
     fs::write(service_path, AUDIO_INIT_UNIT)
         .map_err(|e| format!("Failed to write audio init service: {}", e))?;
+
+    let asound_template_path = Path::new(AUDIO_INIT_ASOUND_TEMPLATE_PATH);
+    if let Some(parent) = asound_template_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create ASound template directory: {}", e))?;
+    }
+    fs::write(asound_template_path, AUDIO_INIT_ASOUND_TEMPLATE)
+        .map_err(|e| format!("Failed to write ASound template: {}", e))?;
+
+    let wireplumber_policy_path = Path::new(WIREPLUMBER_AUDIO_POLICY_PATH);
+    if let Some(parent) = wireplumber_policy_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create WirePlumber config directory: {}", e))?;
+    }
+    fs::write(wireplumber_policy_path, WIREPLUMBER_AUDIO_POLICY)
+        .map_err(|e| format!("Failed to write WirePlumber audio policy: {}", e))?;
+
+    let pipewire_pulse_config_path = Path::new(PIPEWIRE_PULSE_CONFIG_PATH);
+    if let Some(parent) = pipewire_pulse_config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create PipeWire Pulse config directory: {}", e))?;
+    }
+    fs::write(pipewire_pulse_config_path, PIPEWIRE_PULSE_CONFIG)
+        .map_err(|e| format!("Failed to write PipeWire Pulse config: {}", e))?;
+
+    let pulse_client_config_path = Path::new(PULSE_CLIENT_CONFIG_PATH);
+    if let Some(parent) = pulse_client_config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create Pulse client config directory: {}", e))?;
+    }
+    fs::write(pulse_client_config_path, PULSE_CLIENT_CONFIG)
+        .map_err(|e| format!("Failed to write Pulse client config: {}", e))?;
 
     Ok(())
 }
