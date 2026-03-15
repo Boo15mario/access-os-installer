@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -7,6 +8,116 @@ use super::config_engine::{self, DesktopEnv, KernelVariant};
 use super::emit_progress;
 
 const PIPEWIRE_USER_SERVICES: &[&str] = &["pipewire", "pipewire-pulse", "wireplumber"];
+const AUDIO_INIT_SERVICE: &str = "access-os-audio-init.service";
+const AUDIO_INIT_SCRIPT_PATH: &str = "/mnt/usr/local/bin/access-os-audio-init";
+const AUDIO_INIT_SERVICE_PATH: &str = "/mnt/etc/systemd/system/access-os-audio-init.service";
+
+const AUDIO_INIT_SCRIPT: &str = r#"#!/usr/bin/env bash
+set -u
+
+log() {
+    systemd-cat -t "access-os-audio-init" printf "%s\n" "$1"
+}
+
+card_indices() {
+    if [[ -f /proc/asound/cards ]]; then
+        sed -n -e 's/^[[:space:]]*\([0-7]\)[[:space:]].*/\1/p' /proc/asound/cards
+    fi
+}
+
+set_level() {
+    local card="$1" control="$2" level="$3"
+    amixer -c "$card" set "$control" "$level" unmute >/dev/null 2>&1 || true
+}
+
+set_switch() {
+    local card="$1" control="$2" state="$3"
+    amixer -c "$card" set "$control" "$state" >/dev/null 2>&1 || true
+}
+
+mute_control() {
+    local card="$1" control="$2"
+    amixer -c "$card" set "$control" "0%" mute >/dev/null 2>&1 || true
+}
+
+init_card() {
+    local card="$1"
+    set_level "$card" "Front" "80%"
+    set_level "$card" "Master" "80%"
+    set_level "$card" "Master Mono" "80%"
+    set_level "$card" "Master Digital" "80%"
+    set_level "$card" "Playback" "80%"
+    set_level "$card" "Headphone" "100%"
+    set_level "$card" "PCM" "80%"
+    set_level "$card" "PCM,1" "80%"
+    set_level "$card" "DAC" "80%"
+    set_level "$card" "DAC,0" "80%"
+    set_level "$card" "DAC,1" "80%"
+    set_level "$card" "Synth" "80%"
+    set_level "$card" "CD" "80%"
+    set_level "$card" "PC Speaker" "100%"
+
+    mute_control "$card" "Mic"
+    mute_control "$card" "IEC958"
+
+    set_switch "$card" "Master Playback Switch" on
+    set_switch "$card" "Master Surround" on
+    set_level "$card" "Wave" "80%"
+    set_level "$card" "Music" "80%"
+    set_level "$card" "AC97" "80%"
+    set_level "$card" "Dynamic Range Compression" "80%"
+    set_level "$card" "Analog Front" "80%"
+    set_switch "$card" "IEC958 Capture Monitor" off
+    set_level "$card" "IEC958 Playback AC97-SPSA" "0"
+    set_level "$card" "VIA DXS,0" "80%"
+    set_level "$card" "VIA DXS,1" "80%"
+    set_level "$card" "VIA DXS,2" "80%"
+    set_level "$card" "VIA DXS,3" "80%"
+    set_switch "$card" "Headphone Jack Sense" off
+    set_switch "$card" "Line Jack Sense" off
+    set_switch "$card" "Audigy Analog/Digital Output Jack" on
+    set_switch "$card" "SB Live Analog/Digital Output Jack" on
+    set_switch "$card" "Speaker" on
+    set_switch "$card" "Headphone" on
+    set_level "$card" "Digital" "80%"
+}
+
+main() {
+    local card found=0
+    for card in $(card_indices); do
+        found=1
+        log "Initializing ALSA controls on card ${card}"
+        init_card "$card"
+    done
+
+    if [[ "$found" -eq 0 ]]; then
+        log "No ALSA cards detected during audio initialization"
+        return 0
+    fi
+
+    if alsactl store >/dev/null 2>&1; then
+        log "Stored initialized ALSA state"
+    else
+        log "Failed to store ALSA state"
+    fi
+}
+
+main "$@"
+"#;
+
+const AUDIO_INIT_UNIT: &str = r#"[Unit]
+Description=Initialize ALSA mixer controls for Access OS
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service sound.target
+Before=espeakup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/access-os-audio-init
+
+[Install]
+WantedBy=multi-user.target
+"#;
 
 const GNOME_EXTENSIONS: &[(&str, &str)] = &[
     ("no-overview@fthx", "https://github.com/fthx/no-overview"),
@@ -45,7 +156,10 @@ fn run_command(program: &str, args: &[&str], context: &str) -> Result<(), String
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
-            Err(format!("{}: command exited with {}", context, output.status))
+            Err(format!(
+                "{}: command exited with {}",
+                context, output.status
+            ))
         } else {
             Err(format!("{}: {}", context, stderr))
         }
@@ -76,6 +190,28 @@ fn get_root_uuid(root_partition: &str) -> Result<String, String> {
         return Err("blkid returned empty UUID for root partition".to_string());
     }
     Ok(uuid)
+}
+
+fn install_audio_init_assets() -> Result<(), String> {
+    let script_path = Path::new(AUDIO_INIT_SCRIPT_PATH);
+    if let Some(parent) = script_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create audio init script directory: {}", e))?;
+    }
+    fs::write(script_path, AUDIO_INIT_SCRIPT)
+        .map_err(|e| format!("Failed to write audio init script: {}", e))?;
+    fs::set_permissions(script_path, fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("Failed to mark audio init script executable: {}", e))?;
+
+    let service_path = Path::new(AUDIO_INIT_SERVICE_PATH);
+    if let Some(parent) = service_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create audio init service directory: {}", e))?;
+    }
+    fs::write(service_path, AUDIO_INIT_UNIT)
+        .map_err(|e| format!("Failed to write audio init service: {}", e))?;
+
+    Ok(())
 }
 
 pub fn run_pacstrap(
@@ -120,10 +256,7 @@ pub fn configure_system(
         &["ln", "-sf", &tz_path, "/etc/localtime"],
         "Failed to set timezone symlink",
     )?;
-    run_chroot(
-        &["hwclock", "--systohc"],
-        "Failed to sync hardware clock",
-    )?;
+    run_chroot(&["hwclock", "--systohc"], "Failed to sync hardware clock")?;
 
     // 2. Locale
     emit_progress(progress, "Generating locales");
@@ -165,10 +298,7 @@ pub fn configure_system(
             "Failed to install systemd-boot for removable media",
         )?;
     } else {
-        run_chroot(
-            &["bootctl", "install"],
-            "Failed to install systemd-boot",
-        )?;
+        run_chroot(&["bootctl", "install"], "Failed to install systemd-boot")?;
     }
 
     let loader_conf = "default access-os.conf\ntimeout 3\neditor no\n";
@@ -191,7 +321,15 @@ pub fn configure_system(
     // 7. Create user
     emit_progress(progress, "Creating user account");
     run_chroot(
-        &["useradd", "-m", "-G", "audio,video,storage,power,wheel", "-s", "/bin/bash", &config.username],
+        &[
+            "useradd",
+            "-m",
+            "-G",
+            "audio,video,storage,power,wheel",
+            "-s",
+            "/bin/bash",
+            &config.username,
+        ],
         "Failed to create user",
     )?;
 
@@ -203,7 +341,10 @@ pub fn configure_system(
         .spawn()
         .map_err(|e| format!("Failed to spawn chpasswd: {}", e))?;
 
-    let mut stdin = child.stdin.take().ok_or("Failed to open stdin for chpasswd")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Failed to open stdin for chpasswd")?;
     let input = format!("{}:{}\n", config.username, config.password);
     stdin
         .write_all(input.as_bytes())
@@ -234,8 +375,12 @@ pub fn configure_system(
     )?;
 
     // 9. Enable services
+    emit_progress(progress, "Installing audio initialization service");
+    install_audio_init_assets()?;
+
     emit_progress(progress, "Enabling system services");
     let mut services = vec![
+        AUDIO_INIT_SERVICE,
         "NetworkManager",
         "bluetooth",
         "cups",
@@ -284,20 +429,16 @@ accent-color='orange'\n\
 
     // Write dconf database using dconf load inside chroot as the user
     let mut child = Command::new("arch-chroot")
-        .args(&[
-            "/mnt",
-            "su",
-            "-",
-            username,
-            "-c",
-            "dconf load /",
-        ])
+        .args(&["/mnt", "su", "-", username, "-c", "dconf load /"])
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn dconf load: {}", e))?;
 
-    let mut stdin = child.stdin.take().ok_or("Failed to open stdin for dconf load")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Failed to open stdin for dconf load")?;
     stdin
         .write_all(dconf_settings.as_bytes())
         .map_err(|e| format!("Failed to write dconf settings: {}", e))?;
@@ -347,20 +488,16 @@ accent-color='orange'\n\
     );
 
     let mut child = Command::new("arch-chroot")
-        .args(&[
-            "/mnt",
-            "su",
-            "-",
-            username,
-            "-c",
-            "dconf load /",
-        ])
+        .args(&["/mnt", "su", "-", username, "-c", "dconf load /"])
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn dconf load for extensions: {}", e))?;
 
-    let mut stdin = child.stdin.take().ok_or("Failed to open stdin for dconf load")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Failed to open stdin for dconf load")?;
     stdin
         .write_all(enable_setting.as_bytes())
         .map_err(|e| format!("Failed to write extension enable settings: {}", e))?;
