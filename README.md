@@ -2,6 +2,18 @@
 
 Installers for access-OS, with a strong focus on accessibility.
 
+## Project docs
+
+Current installer-focused documentation lives in [`docs/`](./docs/README.md).
+
+Recommended starting points:
+- [`docs/installer-flow.md`](./docs/installer-flow.md)
+- [`docs/golden-path.md`](./docs/golden-path.md)
+- [`docs/accessibility-checklist.md`](./docs/accessibility-checklist.md)
+- [`docs/testing-checklist.md`](./docs/testing-checklist.md)
+- [`docs/open-questions.md`](./docs/open-questions.md)
+- [`docs/work-log.md`](./docs/work-log.md)
+
 ## What’s Here
 
 This repository is a Cargo workspace with multiple installers sharing one backend:
