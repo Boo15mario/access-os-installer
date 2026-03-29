@@ -327,10 +327,103 @@ fn install_audio_init_assets() -> Result<(), String> {
     Ok(())
 }
 
+/// Extracts Access OS repo sections from a pacman.conf file.
+/// Returns the [access-os-core] and [access-os-extra] sections.
+fn extract_access_os_repos(pacman_conf_contents: &str) -> Option<String> {
+    let mut in_access_os_repo = false;
+    let mut lines_for_repo = Vec::new();
+
+    for line in pacman_conf_contents.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[access-os-core]" || trimmed == "[access-os-extra]" {
+            in_access_os_repo = true;
+            lines_for_repo.clear();
+            lines_for_repo.push(line.to_string());
+        } else if in_access_os_repo {
+            if trimmed.starts_with('[') && !trimmed.is_empty() {
+                // Started a new section, end of access-os repos
+                break;
+            }
+            lines_for_repo.push(line.to_string());
+        }
+    }
+
+    if lines_for_repo.is_empty() {
+        return None;
+    }
+
+    let mut result = lines_for_repo.join("\n");
+    result.push('\n');
+    Some(result)
+}
+
+/// Appends Access OS custom repos to the live environment's pacman.conf.
+/// This must be done before pacstrap so that packages from these repos
+/// (e.g. access-os-core, access-os-extra) can be resolved.
+///
+/// Reads repo definitions from the staged system config at /access-os-config/etc/pacman.conf
+/// if available, otherwise falls back to the target system's pacman.conf at /mnt/etc/pacman.conf.
+fn stage_access_os_repos(
+    progress: Option<&super::ProgressCallback<'_>>,
+) -> Result<(), String> {
+    emit_progress(progress, "Configuring Access OS package repositories");
+    let live_pacman_conf = "/etc/pacman.conf";
+
+    // Try to read repo definitions from the staged system config first,
+    // then fall back to the target system's pacman.conf.
+    let staged_pacman_conf = "/access-os-config/etc/pacman.conf";
+    let target_pacman_conf = "/mnt/etc/pacman.conf";
+
+    let repo_block = if Path::new(staged_pacman_conf).exists() {
+        emit_progress(progress, "Reading Access OS repos from staged system config");
+        let contents = fs::read_to_string(staged_pacman_conf)
+            .map_err(|e| format!("Failed to read {}: {}", staged_pacman_conf, e))?;
+        extract_access_os_repos(&contents)
+            .ok_or_else(|| "No Access OS repos found in staged config".to_string())?
+    } else if Path::new(target_pacman_conf).exists() {
+        emit_progress(progress, "Reading Access OS repos from target system config");
+        let contents = fs::read_to_string(target_pacman_conf)
+            .map_err(|e| format!("Failed to read {}: {}", target_pacman_conf, e))?;
+        extract_access_os_repos(&contents)
+            .ok_or_else(|| "No Access OS repos found in target system config".to_string())?
+    } else {
+        return Err(format!(
+            "No pacman.conf found at {} or {}",
+            staged_pacman_conf, target_pacman_conf
+        ));
+    };
+
+    let live_contents = fs::read_to_string(live_pacman_conf)
+        .map_err(|e| format!("Failed to read {}: {}", live_pacman_conf, e))?;
+
+    // Skip if already configured.
+    if live_contents.contains("[access-os-core]") {
+        emit_progress(progress, "Access OS repos already configured");
+        return Ok(());
+    }
+
+    let new_contents = format!("{}\n{}", live_contents.trim_end(), repo_block);
+    fs::write(live_pacman_conf, new_contents)
+        .map_err(|e| format!("Failed to write {}: {}", live_pacman_conf, e))?;
+
+    // Refresh pacman database so the new repos are recognized.
+    let output = Command::new("pacman")
+        .args(["-Sy", "--noconfirm"])
+        .output()
+        .map_err(|e| format!("Failed to refresh pacman db: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        eprintln!("WARNING: pacman -Sy failed: {}", stderr);
+    }
+
+    Ok(())
+}
+
 pub fn run_pacstrap(
     config: &InstallConfig,
     progress: Option<&super::ProgressCallback<'_>>,
 ) -> Result<(), String> {
+    stage_access_os_repos(progress)?;
     emit_progress(progress, "Installing packages with pacstrap");
     let packages =
         config_engine::full_package_list(&config.desktop_env, &config.kernel, config.nvidia)?;
