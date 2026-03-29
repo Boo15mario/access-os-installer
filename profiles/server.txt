@@ -2,4 +2,3 @@ docker
 docker-compose
 tailscale
 openssh
-google-cloud-cli
